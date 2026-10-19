@@ -612,7 +612,7 @@ export function buildDinosaur(riderIndex = 0) {
   };
 }
 
-export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 / 60) {
+export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 / 60, fire = 0) {
   const stride = time * (run ? 9.8 : 1.3),
     breathing = Math.sin(time * 1.8);
   dino.body.position.y =
@@ -629,8 +629,8 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
     3.02 -
     duck * 1.18 +
     (run ? Math.sin(stride * 2 - 0.5) * 0.04 : breathing * 0.025);
-  dino.head.rotation.x = duck * 0.14 + Math.sin(time * 0.7) * 0.018;
-  dino.jaw.rotation.x = 0.03 + Math.max(0, Math.sin(time * 0.6)) * 0.035;
+  dino.head.rotation.x = duck * 0.14 + Math.sin(time * 0.7) * 0.018 + fire * 0.07;
+  dino.jaw.rotation.x = 0.03 + Math.max(0, Math.sin(time * 0.6)) * 0.035 - fire * 0.45;
   dino.legs.forEach((leg, i) => {
     const phase = stride + i * Math.PI;
     leg.hip.rotation.x = run

@@ -155,6 +155,10 @@ export class GameAudio {
     this.tone(392, 0.35, "sine", 0.13);
     setTimeout(() => this.tone(523, 0.45, "sine", 0.13), 120);
   }
+  fireBreath() {
+    this.noise(1.6, 0.42, 1800);
+    this.tone(65, 1.1, "sawtooth", 0.06, 32);
+  }
   update(dt, speed, running, inAir) {
     if (!this.context || !this.windGain || this.context.state !== "running")
       return;

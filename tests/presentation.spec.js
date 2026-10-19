@@ -16,7 +16,7 @@ async function openControlledGame(page) {
     ) });
   });
   await page.addInitScript(() => localStorage.setItem(
-    "saurian-preferences", JSON.stringify({ quality: "low", motion: false, sound: false, difficulty: "easy" }),
+    "saurian-preferences", JSON.stringify({ quality: "low", motion: false, sound: false, difficulty: "easy", best: { easy: 321, normal: 6543, hard: 98765 } }),
   ));
   await page.goto("/");
   await page.waitForFunction(() => window.__saurian?.renderer.render.frame > 2);
@@ -34,10 +34,10 @@ async function layout(page) {
     const hint = document.querySelector(".camera-drag-hint");
     return {
       tipBottom: innerHeight - tip.getBoundingClientRect().bottom,
-      viewBottom: innerHeight - view.getBoundingClientRect().bottom,
-      centerDifference: tip.getBoundingClientRect().top + tip.getBoundingClientRect().height / 2 - view.getBoundingClientRect().top - view.getBoundingClientRect().height / 2,
-      horizontalGap: view.getBoundingClientRect().left - tip.getBoundingClientRect().right,
-      hintToControls: document.querySelector(".touch-icon").getBoundingClientRect().top - hint.getBoundingClientRect().bottom,
+      viewAnchor: innerWidth <= 700 ? view.getBoundingClientRect().top : innerHeight - view.getBoundingClientRect().bottom,
+      viewLeft: view.getBoundingClientRect().left,
+      hudGap: view.getBoundingClientRect().top - document.getElementById("game-hud").getBoundingClientRect().bottom,
+      hintGap: hint.getBoundingClientRect().top - view.getBoundingClientRect().bottom,
     };
   });
 }
@@ -62,6 +62,12 @@ for (const mobile of [false, true]) {
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await openControlledGame(page);
+      await expect(page.locator("#camp-best")).toHaveText("00321 M");
+      await page.locator('[data-difficulty="normal"]').click();
+      await expect(page.locator("#camp-best")).toHaveText("06543 M");
+      await page.locator('[data-difficulty="hard"]').click();
+      await expect(page.locator("#camp-best")).toHaveText("98765 M");
+      await page.locator('[data-difficulty="easy"]').click();
       if (mobile) {
         for (const width of [320, 390]) {
           await page.setViewportSize({ width, height: 844 });
@@ -82,11 +88,11 @@ for (const mobile of [false, true]) {
       await page.clock.runFor(100);
       const opening = await layout(page);
       expect(opening.tipBottom).toBe(mobile ? 104 : 39);
-      expect(opening.viewBottom).toBe(mobile ? 104 : 32);
+      expect(opening.viewAnchor).toBe(mobile ? 98 : 32);
       if (mobile) {
-        expect(Math.abs(opening.centerDifference)).toBeLessThan(1);
-        expect(opening.horizontalGap).toBeGreaterThan(12);
-        expect(opening.hintToControls).toBeGreaterThanOrEqual(10);
+        expect(opening.viewLeft).toBe(18);
+        expect(opening.hudGap).toBeGreaterThanOrEqual(12);
+        expect(opening.hintGap).toBe(7);
         await page.setViewportSize({ width: 390, height: 740 });
         expect(await layout(page)).toEqual(opening);
         await page.setViewportSize({ width: 390, height: 844 });

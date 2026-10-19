@@ -424,6 +424,15 @@ h1 em {
   margin-right: 5px;
   background: #abae94;
 }
+.camp-record {
+  justify-content: space-between;
+  gap: 12px;
+  color: #d3c9ac;
+}
+.camp-record > span { display: flex; align-items: center; gap: 4px; }
+.camp-record > span small { margin-left: 4px; font-size: 7px; color: var(--muted); }
+.camp-record strong { font-family: var(--display); font-size: 21px; letter-spacing: 1px; color: var(--cream); line-height: 1; }
+.camp-record strong small { font-family: Inter, sans-serif; font-size: 8px; letter-spacing: 0; }
 .version {
   margin-left: auto;
   font-size: 7px;
@@ -621,6 +630,12 @@ kbd {
 .hud-distance small {
   font: 400 13px Inter;
   letter-spacing: 0;
+}
+#distance.milestone-flash { animation: milestone-pulse 2.2s ease-out; }
+.result-open #distance.milestone-flash { animation-play-state: paused; }
+@keyframes milestone-pulse {
+  0%, 40%, 100% { color: var(--cream); text-shadow: none; }
+  18%, 65% { color: #ffd181; text-shadow: 0 0 14px #ff9d3baa, 0 0 30px #ee783777; }
 }
 .hud-best {
   border-left: 1px solid #f3eddf44;
@@ -1504,12 +1519,18 @@ select {
     font-size: 23px;
   }
   .playing .view-control {
-    bottom: calc(var(--touch-bottom) + 84px);
-    right: 18px;
+    top: calc(max(18px, env(safe-area-inset-top, 0px)) + 80px);
+    left: 18px;
+    bottom: auto;
+    right: auto;
     height: 36px;
     z-index: 6;
     background: #26352966;
     padding: 9px 12px;
+  }
+  .playing .camera-drag-hint {
+    left: 0;
+    right: auto;
   }
   .game-tip {
     bottom: calc(var(--touch-bottom) + 84px);

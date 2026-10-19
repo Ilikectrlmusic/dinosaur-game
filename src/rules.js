@@ -6,7 +6,7 @@ export const CONFIG = {
     label: "EXPLORER",
     speed: 10,
     maxSpeed: 24,
-    acceleration: 0.22,
+    acceleration: 0.16,
     gap: 2.7,
     description: "放慢脚步，感受旷野",
   },
@@ -14,7 +14,7 @@ export const CONFIG = {
     label: "ADVENTURER",
     speed: 14,
     maxSpeed: 30,
-    acceleration: 0.28,
+    acceleration: 0.2,
     gap: 2.05,
     description: "危机四伏，保持敏锐",
   },
@@ -22,7 +22,7 @@ export const CONFIG = {
     label: "SURVIVOR",
     speed: 19,
     maxSpeed: 36,
-    acceleration: 0.34,
+    acceleration: 0.24,
     gap: 1.55,
     description: "野性全开，挑战你的极限",
   },
@@ -34,12 +34,18 @@ export const BIRD_UNLOCK_DISTANCE = 150;
 export const BIRD_HEIGHTS = { low: 1.55, high: 3.55 };
 export const BIRD_BOB = 0.08;
 export const BIRD_SPEED_BONUS = 2.5;
+export const ACCELERATION_TAPER_TIME = 120;
+export const CACTUS_CLUSTER_PATTERNS = [
+  [1.05, 1.55, 2.05], [2.05, 1.55, 1.05], [1.55, 2.05, 1.05],
+  [1.05, 2.05, 1.55], [1.55, 1.05, 2.05], [2.05, 1.05, 1.55],
+];
 
 export function speedAtTime(difficulty, runTime) {
   const config = CONFIG[difficulty];
   return Math.min(
     config.maxSpeed,
-    config.speed + Math.max(0, runTime) * config.acceleration,
+    config.speed + config.acceleration * ACCELERATION_TAPER_TIME *
+      Math.log1p(Math.max(0, runTime) / ACCELERATION_TAPER_TIME),
   );
 }
 
@@ -55,13 +61,14 @@ export function chooseObstacle(distance, random = Math.random) {
     };
   }
   if (distance >= CACTUS_CLUSTER_DISTANCE && random() < 0.3) {
-    const height = random() < 0.5 ? CACTUS_HEIGHTS.medium : CACTUS_HEIGHTS.tall;
+    const heights = CACTUS_CLUSTER_PATTERNS[Math.floor(random() * CACTUS_CLUSTER_PATTERNS.length)];
+    const height = Math.max(...heights);
     return {
       type: "cactus", variant: "triple", height,
       // The leading cactus shares the single cactus's approach distance.
       // All three must be cleared in one jump before awarding the pass.
       depth: CACTUS_CLUSTER_SPACING * 2,
-      members: [0, 1, 2].map((i) => ({ x: 0, z: i ? -i * CACTUS_CLUSTER_SPACING : 0, height })),
+      members: heights.map((height, i) => ({ x: 0, z: i ? -i * CACTUS_CLUSTER_SPACING : 0, height })),
     };
   }
   const variants = Object.keys(CACTUS_HEIGHTS);

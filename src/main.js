@@ -33,6 +33,7 @@ import { DragLook } from "./drag-look.js";
 import { DeathOverlay } from "./death-overlay.js";
 import { MobileInput } from "./mobile-input.js";
 import { surfaceReady } from "./surface-detail.js";
+import { FireBreath } from "./fire-breath.js";
 
 const $ = (id) => document.getElementById(id);
 let saved = {};
@@ -69,6 +70,7 @@ audio.setEnabled(state.sound);
 audio.setVolume(state.volume);
 let renderer,
   world,
+  fire,
   camera,
   dragLook,
   mobileInput,
@@ -164,6 +166,10 @@ function updateSelection() {
   $("volume-setting").value = state.volume * 100;
   $("quality-setting").value = state.quality;
   $("motion-setting").checked = state.motion;
+  updateCampBest();
+}
+function updateCampBest() {
+  $("camp-best").innerHTML = String(Math.floor(state.best[state.difficulty] || 0)).padStart(5, "0") + "<small> M</small>";
 }
 function resetDino() {
   if (physics) {
@@ -246,6 +252,8 @@ function startGame() {
   audio.init();
   audio.roar(0.12);
   resetDino();
+  fire.reset();
+  $("distance").classList.remove("milestone-flash");
   clearObstacles();
   Object.assign(state, {
     mode: "running",
@@ -274,6 +282,8 @@ function startGame() {
   previousStep = 0;
 }
 function goHome() {
+  if (["running", "paused"].includes(state.mode))
+    state.best[state.difficulty] = Math.max(state.best[state.difficulty] || 0, Math.floor(state.distance));
   clearTimeout(deathTimeout);
   roundGeneration++;
   crashIssue = null;
@@ -281,6 +291,9 @@ function goHome() {
   dragLook.reset();
   clearObstacles();
   resetDino();
+  fire.reset();
+  $("distance").classList.remove("milestone-flash");
+  updateCampBest();
   Object.assign(state, {
     mode: "menu",
     speed: 0,
@@ -336,6 +349,8 @@ function finishCrash(generation) {
 function crash(obstacle) {
   if (state.mode !== "running") return;
   state.mode = "crashed";
+  fire.stop();
+  $("distance").classList.remove("milestone-flash");
   resetInputs();
   crashAge = 0;
   const generation = roundGeneration;
@@ -410,7 +425,8 @@ function updateGameplay(dt) {
   );
   dino.root.position.set(state.x, state.y, 0);
   dino.root.rotation.z = THREE.MathUtils.damp(dino.root.rotation.z, 0, 8, dt);
-  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt);
+  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength);
+  fire.update(dt, dino.head, state.speed);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
   for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -452,16 +468,22 @@ function updateGameplay(dt) {
       if (dx < 1.5) toast(bird ? "漂亮的闪避！" : "完美越过！");
     }
   }
+  if (state.mode !== "running") return;
   const step = Math.floor(state.time * 3.1);
   if (step !== previousStep && state.y < 0.1) {
     world.emitDust(state.x + (step % 2 ? 0.5 : -0.5), 0.35, 4);
     previousStep = step;
   }
-  const milestone = Math.floor(state.distance / 250);
+  const milestone = Math.floor(state.distance / 1000);
   if (milestone > state.milestone) {
     state.milestone = milestone;
     audio.milestone();
-    toast(`${milestone * 250} 米 · 荒野仍在延伸`);
+    audio.fireBreath();
+    fire.start();
+    $("distance").classList.remove("milestone-flash");
+    void $("distance").offsetWidth;
+    $("distance").classList.add("milestone-flash");
+    toast(`${milestone * 1000} 米 · 炽焰向前`);
   }
   if (state.runTime >= 5) document.body.classList.add("hints-dismissed");
   updateHUD();
@@ -573,9 +595,11 @@ function frame(now) {
   world.update(dt, state.time, speed, state.y);
   audio.update(dt, speed, state.mode === "running", state.y > 0.1);
   updateCamera(dt);
+  fire.setViewport(renderer.domElement.height, camera.fov, state.view === "first");
   renderer.render(world.scene, camera);
 }
 function bindUI() {
+  $("distance").addEventListener("animationend", () => $("distance").classList.remove("milestone-flash"));
   document.querySelectorAll("[data-rider]").forEach((b) =>
     b.addEventListener("click", () => {
       state.rider = Number(b.dataset.rider);
@@ -756,6 +780,7 @@ function init() {
     camera.position.set(8.6, 4.7, 9.6);
     camera.lookAt(-3, 1.9, 1.5);
     world = new DesertWorld(renderer);
+    fire = new FireBreath(world.scene);
     resetDino();
     applyQuality();
     updateSelection();
@@ -800,6 +825,8 @@ function init() {
             duck: state.duck,
             x: state.x,
             sound: state.sound,
+            milestone: state.milestone,
+            fire: { active: fire.active, bursts: fire.bursts, particles: fire.alive, strength: fire.strength, origin: fire.origin.toArray() },
             obstacles: obstacles.map((o) => ({
               type: o.userData.type,
               variant: o.userData.variant,

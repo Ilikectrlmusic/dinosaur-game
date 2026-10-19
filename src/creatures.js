@@ -1,8 +1,12 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { mergeStaticMeshes, loftGeometry, curveMesh } from "./model-detail.js";
+import { reptileSurface, fabricSurface, leatherSurface } from "./surface-detail.js";
 
 const sphere = new THREE.SphereGeometry(1, 24, 16);
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
 const cone = new THREE.ConeGeometry(1, 1, 10);
+const fabric = fabricSurface(), leatherGrain = leatherSurface();
 export const RIDERS = [
   {
     name: "艾拉",
@@ -33,10 +37,12 @@ export const RIDERS = [
   },
 ];
 const leather = new THREE.MeshStandardMaterial({
+  ...leatherGrain,
   color: "#4a3021",
   roughness: 0.9,
 });
 const darkLeather = new THREE.MeshStandardMaterial({
+  ...leatherGrain,
   color: "#2f2a20",
   roughness: 0.95,
 });
@@ -86,81 +92,62 @@ function ring(parent, material, radius, tube, pos, rotation) {
   parent.add(mesh);
   return mesh;
 }
-function scaleTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const c = canvas.getContext("2d");
-  c.fillStyle = "#747b55";
-  c.fillRect(0, 0, 512, 512);
-  let seed = 29;
-  const random = () => {
-    seed = (seed * 16807) % 2147483647;
-    return (seed - 1) / 2147483646;
-  };
-  for (let y = -10; y < 530; y += 12)
-    for (let x = -10; x < 530; x += 13) {
-      const xx = x + (Math.floor(y / 12) % 2) * 6,
-        bright = 75 + random() * 35;
-      c.fillStyle = `hsl(${65 + random() * 14},${14 + random() * 12}%,${bright * 0.55}%)`;
-      c.beginPath();
-      c.ellipse(
-        xx,
-        y,
-        5.5 + random(),
-        4.7 + random(),
-        random() * 0.4,
-        0,
-        Math.PI * 2,
-      );
-      c.fill();
-      c.strokeStyle = "#303c2425";
-      c.lineWidth = 0.8;
-      c.stroke();
-    }
-  for (let i = 0; i < 1800; i++) {
-    c.fillStyle = random() > 0.5 ? "#d0c89815" : "#1e29151a";
-    c.fillRect(
-      random() * 512,
-      random() * 512,
-      1 + random() * 4,
-      1 + random() * 3,
-    );
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(2, 2);
-  return texture;
-}
-const skinMap = scaleTexture();
+const reptile = reptileSurface();
 const skin = new THREE.MeshStandardMaterial({
-  map: skinMap,
-  color: "#c4c0a3",
-  roughness: 0.91,
-  bumpMap: skinMap,
-  bumpScale: 0.042,
+  ...reptile,
+  color: "#ccd0ad",
+  normalScale: new THREE.Vector2(0.4, 0.4),
+  vertexColors: true,
 });
 const belly = new THREE.MeshStandardMaterial({
-  map: skinMap,
-  color: "#e0d1ae",
-  roughness: 0.95,
-  bumpMap: skinMap,
-  bumpScale: 0.025,
+  ...reptile,
+  color: "#e2ca95",
+  normalScale: new THREE.Vector2(0.3, 0.3),
+  roughness: 0.88,
 });
 const horn = new THREE.MeshStandardMaterial({
   color: "#77795b",
   roughness: 0.9,
 });
+const stitch = new THREE.MeshStandardMaterial({ color: "#d0b58a", roughness: 1 });
+
+function roundedPart(parent, material, size, position, radius = 0.04) {
+  const mesh = new THREE.Mesh(new RoundedBoxGeometry(...size, 2, radius), material);
+  mesh.position.set(...position);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+function anatomicalPart(parent, sections, material = skin, offset = 0) {
+  const geometry = loftGeometry(sections, 28);
+  if (material === skin) {
+    const positions = geometry.attributes.position, colors = [];
+    const color = new THREE.Color();
+    for (let i = 0; i < positions.count; i++) {
+      const y = positions.getY(i), z = positions.getZ(i) + offset;
+      const stripe = Math.max(0, Math.sin(z * 11 + y * 3) - 0.35) * Math.max(0, y + 0.45);
+      color.setRGB(0.88 - stripe * 0.28, 0.93 - stripe * 0.25, 0.77 - stripe * 0.22);
+      if (y < -0.2) color.lerp(new THREE.Color("#dfc79c"), Math.min(0.65, -y));
+      colors.push(color.r, color.g, color.b);
+    }
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  }
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
 
 export function buildRider(index = 0) {
   const config = RIDERS[index],
     root = new THREE.Group();
   const coat = new THREE.MeshStandardMaterial({
+    ...fabric,
     color: config.coat,
     roughness: 1,
   });
   const cloth = new THREE.MeshStandardMaterial({
+    ...fabric,
     color: config.pants,
     roughness: 1,
   });
@@ -169,10 +156,12 @@ export function buildRider(index = 0) {
     roughness: 0.85,
   });
   const hat = new THREE.MeshStandardMaterial({
+    ...fabric,
     color: config.hat,
     roughness: 1,
   });
   const scarfMat = new THREE.MeshStandardMaterial({
+    ...fabric,
     color: config.scarf,
     roughness: 1,
   });
@@ -187,8 +176,12 @@ export function buildRider(index = 0) {
   const torso = new THREE.Group();
   torso.position.set(0, 3.39, 0.02);
   root.add(torso);
-  ellipsoid(torso, coat, [0, 0, 0], [0.31, 0.43, 0.22]);
-  ellipsoid(torso, coat, [0, 0.25, 0], [0.34, 0.16, 0.22]);
+  const jacket = new THREE.Mesh(loftGeometry([
+    [-0.42, 0, 0.2, 0.16], [-0.32, 0, 0.25, 0.18], [-0.08, 0, 0.28, 0.205],
+    [0.21, 0, 0.33, 0.22], [0.34, 0, 0.29, 0.19], [0.42, 0, 0.13, 0.12],
+  ]).rotateX(-Math.PI / 2), coat);
+  jacket.castShadow = true;
+  torso.add(jacket);
   // Stitched expedition vest, belt, chest pockets and straps.
   for (const s of [-1, 1]) {
     ellipsoid(torso, leather, [s * 0.175, 0.04, -0.192], [0.085, 0.105, 0.025]);
@@ -210,12 +203,23 @@ export function buildRider(index = 0) {
     [Math.PI / 2, 0, 0],
   ).scale.set(1.1, 0.8, 1);
   ellipsoid(torso, steel, [0, -0.32, -0.23], [0.045, 0.035, 0.012]);
-  const backpack = ellipsoid(
-    torso,
-    leather,
-    [0, 0.02, 0.245],
-    [0.24, 0.32, 0.14],
-  );
+  const packMat = new THREE.MeshStandardMaterial({ ...fabric, color: index === 0 ? "#967246" : index === 1 ? "#4d5c4a" : "#7a5147" });
+  const backpack = roundedPart(torso, packMat, [0.45, 0.57, 0.25], [0, 0.015, 0.3], 0.07);
+  backpack.userData.keepSeparate = true;
+  roundedPart(torso, leather, [0.39, 0.17, 0.06], [0, 0.19, 0.445]);
+  roundedPart(torso, packMat, [0.29, 0.2, 0.07], [0, -0.13, 0.45]);
+  for (const s of [-1, 1]) {
+    segment(torso, darkLeather, [s * 0.15, 0.31, 0.43], [s * 0.15, -0.25, 0.46], 0.018);
+    roundedPart(torso, steel, [0.048, 0.065, 0.013], [s * 0.15, 0.03, 0.472], 0.009);
+    torso.add(curveMesh([[s * 0.22, 0.29, -0.18], [s * 0.3, 0.36, 0.05], [s * 0.2, 0.26, 0.39]], 0.026, darkLeather));
+    torso.add(curveMesh([[s * 0.065, 0.27, -0.22], [s * 0.09, 0.08, -0.235], [s * 0.11, -0.29, -0.185]], 0.004, stitch));
+    roundedPart(torso, leather, [0.13, 0.17, 0.035], [s * 0.18, 0.035, -0.215], 0.02);
+    for (let j = 0; j < 4; j++) segment(torso, stitch, [s * 0.18 - 0.04 + j * 0.026, 0.09, -0.238], [s * 0.18 - 0.025 + j * 0.026, 0.09, -0.238], 0.003);
+  }
+  segment(torso, scarfMat, [-0.27, 0.37, 0.35], [0.27, 0.37, 0.35], 0.09);
+  for (const x of [-0.19, 0.19]) ring(torso, darkLeather, 0.092, 0.014, [x, 0.37, 0.35], [0, Math.PI / 2, 0]);
+  ellipsoid(torso, steel, [0.26, -0.12, 0.31], [0.08, 0.13, 0.065]);
+  segment(torso, leather, [0.26, -0.01, 0.31], [0.26, 0.02, 0.31], 0.035);
   segment(torso, scarfMat, [-0.19, 0.27, 0.39], [0.19, 0.27, 0.39], 0.065);
   ellipsoid(torso, scarfMat, [0, 0.39, -0.015], [0.18, 0.11, 0.16]);
   ellipsoid(
@@ -231,15 +235,19 @@ export function buildRider(index = 0) {
   ellipsoid(head, face, [0, 0, 0], [0.205, 0.26, 0.2]);
   ellipsoid(head, face, [0, -0.12, -0.12], [0.14, 0.12, 0.115]);
   ellipsoid(head, face, [0, -0.035, -0.204], [0.038, 0.055, 0.05]);
+  const lip = new THREE.MeshStandardMaterial({ color: "#8f5945", roughness: 0.75 });
+  head.add(curveMesh([[-0.065, -0.125, -0.198], [0, -0.136, -0.221], [0.06, -0.125, -0.198]], 0.007, lip, 8));
   for (const s of [-1, 1]) {
     ellipsoid(head, face, [s * 0.202, -0.015, 0], [0.038, 0.065, 0.045]);
     ellipsoid(head, hair, [s * 0.087, 0.04, -0.18], [0.041, 0.012, 0.013]);
     ellipsoid(
       head,
-      darkLeather,
-      [s * 0.087, 0.015, -0.19],
-      [0.011, 0.013, 0.009],
+      bone,
+      [s * 0.087, 0.015, -0.193],
+      [0.032, 0.017, 0.012],
     );
+    ellipsoid(head, darkLeather, [s * 0.084, 0.014, -0.204], [0.01, 0.013, 0.005]);
+    ellipsoid(head, bone, [s * 0.08, 0.019, -0.21], [0.003, 0.004, 0.003]);
   }
   ellipsoid(head, hair, [0, 0.13, 0.025], [0.21, 0.17, 0.19]);
   if (index === 0) {
@@ -257,6 +265,9 @@ export function buildRider(index = 0) {
     );
     brim.position.y = 0.2;
     brim.scale.z = 0.82;
+    const brimPos = brim.geometry.attributes.position;
+    for (let i = 0; i < brimPos.count; i++) brimPos.setY(i, brimPos.getY(i) + Math.abs(brimPos.getX(i)) ** 2 * 0.3);
+    brim.geometry.computeVertexNormals();
     head.add(brim);
     brim.castShadow = true;
     ellipsoid(head, hat, [0, 0.27, 0.02], [0.225, 0.15, 0.2]);
@@ -274,6 +285,11 @@ export function buildRider(index = 0) {
     brim.position.set(0, 0.2, -0.22);
     head.add(brim);
     ellipsoid(head, hair, [0, -0.13, -0.08], [0.17, 0.1, 0.16]);
+    roundedPart(head, leather, [0.11, 0.065, 0.018], [0, 0.27, -0.181], 0.014);
+    for (const s of [-1, 1]) {
+      segment(torso, darkLeather, [s * 0.07, 0.08, -0.24], [s * 0.07, -0.07, -0.28], 0.035);
+      ellipsoid(torso, steel, [s * 0.07, -0.065, -0.29], [0.04, 0.018, 0.04]);
+    }
   } else {
     ellipsoid(head, scarfMat, [0, 0.21, 0.025], [0.23, 0.14, 0.23]);
     ring(head, leather, 0.214, 0.025, [0, 0.17, 0.015], [Math.PI / 2, 0, 0]);
@@ -284,7 +300,7 @@ export function buildRider(index = 0) {
         [s * 0.105, 0.17, -0.2],
         [0.083, 0.06, 0.045],
       );
-      ellipsoid(head, steel, [s * 0.105, 0.17, -0.24], [0.065, 0.043, 0.01]);
+      ellipsoid(head, new THREE.MeshStandardMaterial({ color: "#b77c3e", metalness: 0.45, roughness: 0.19 }), [s * 0.105, 0.17, -0.24], [0.065, 0.043, 0.01]);
     }
     for (let j = 0; j < 5; j++)
       ellipsoid(head, hair, [0.2, -0.1 - j * 0.06, 0.12], [0.05, 0.05, 0.05]);
@@ -305,6 +321,8 @@ export function buildRider(index = 0) {
       0.065,
     );
     ellipsoid(arm, darkLeather, [s * 0.05, -0.48, -0.44], [0.075, 0.075, 0.09]);
+    for (let finger = 0; finger < 4; finger++) segment(arm, face, [s * 0.05 + (finger - 1.5) * 0.025, -0.49, -0.48], [s * 0.05 + (finger - 1.5) * 0.025, -0.535, -0.51], 0.012);
+    arm.add(curveMesh([[s * 0.07, -0.14, -0.13], [s * 0.14, -0.3, -0.16], [s * 0.075, -0.43, -0.39]], 0.004, stitch, 8));
     const leg = new THREE.Group();
     leg.position.set(s * 0.28, 2.94, 0.12);
     root.add(leg);
@@ -333,6 +351,8 @@ export function buildRider(index = 0) {
       [s * 0.34, -1.01, -0.04],
       [0, Math.PI / 2, 0],
     ).scale.y = 1.3;
+    roundedPart(leg, leather, [0.14, 0.15, 0.035], [s * 0.28, -0.43, -0.318], 0.025);
+    for (let j = 0; j < 4; j++) segment(leg, stitch, [s * 0.34 - 0.035, -0.78 - j * 0.04, -0.19], [s * 0.34 + 0.035, -0.795 - j * 0.04, -0.19], 0.005);
     limbs.push({ arm, leg, side: s });
   }
   // Bend the upper body around the hips, leaving the seat and stirrups planted.
@@ -342,6 +362,7 @@ export function buildRider(index = 0) {
   upperBody.attach(torso);
   upperBody.attach(head);
   limbs.forEach(({ arm }) => upperBody.attach(arm));
+  mergeStaticMeshes(root);
   return { root, upperBody, torso, head, pelvis, limbs, backpack, index };
 }
 
@@ -350,21 +371,19 @@ export function buildDinosaur(riderIndex = 0) {
   const body = new THREE.Group();
   body.position.set(0, 1.97, 0.25);
   root.add(body);
-  ellipsoid(body, skin, [0, 0, 0], [0.64, 0.75, 1.3], [0.1, 0, 0]);
+  anatomicalPart(body, [[-1.45, 0.1, 0.07, 0.08], [-1.12, 0.08, 0.4, 0.49], [-0.65, 0.04, 0.6, 0.67], [0.05, 0, 0.66, 0.73], [0.75, 0.05, 0.5, 0.61], [1.35, 0.02, 0.13, 0.19]]);
   ellipsoid(body, belly, [0, -0.25, -0.36], [0.51, 0.47, 0.89], [0.15, 0, 0]);
   ellipsoid(body, skin, [0, 0.13, -0.85], [0.47, 0.61, 0.65], [0.4, 0, 0]);
   // A thick, curved neck connects to a muscular, expressive head.
   const neck = new THREE.Group();
   neck.position.set(0, 2.49, -0.94);
   root.add(neck);
-  ellipsoid(neck, skin, [0, 0, 0], [0.39, 0.68, 0.45], [-0.36, 0, 0]);
+  anatomicalPart(neck, [[-0.54, 0.35, 0.23, 0.3], [-0.32, 0.25, 0.31, 0.45], [0, 0, 0.37, 0.56], [0.32, -0.3, 0.34, 0.47], [0.5, -0.43, 0.14, 0.17]]);
   ellipsoid(neck, belly, [0, -0.14, -0.28], [0.29, 0.48, 0.17], [-0.3, 0, 0]);
   const head = new THREE.Group();
   head.position.set(0, 3.02, -1.48);
   root.add(head);
-  ellipsoid(head, skin, [0, 0.02, -0.22], [0.385, 0.37, 0.64]);
-  ellipsoid(head, skin, [0, -0.065, -0.62], [0.335, 0.25, 0.51]);
-  ellipsoid(head, skin, [0, -0.02, -0.94], [0.29, 0.21, 0.24]);
+  anatomicalPart(head, [[-1.19, -0.04, 0.07, 0.07], [-1.03, -0.01, 0.25, 0.18], [-0.72, 0.02, 0.3, 0.22], [-0.33, 0.06, 0.39, 0.31], [0.06, 0.015, 0.31, 0.3], [0.26, -0.09, 0.13, 0.14]]);
   // Mouth line and independently modeled lower jaw.
   ellipsoid(head, darkLeather, [0, -0.175, -0.58], [0.316, 0.035, 0.57]);
   const jaw = new THREE.Group();
@@ -405,6 +424,10 @@ export function buildDinosaur(riderIndex = 0) {
       [s * 0.205, 0.02, -1.09],
       [0.04, 0.025, 0.013],
     );
+    head.add(curveMesh([[s * 0.388, 0.08, -0.365], [s * 0.411, 0.174, -0.28], [s * 0.378, 0.1, -0.19]], 0.018, skin, 9));
+    for (let fold = 0; fold < 4; fold++) {
+      neck.add(curveMesh([[s * 0.26, 0.05 - fold * 0.13, -0.27], [s * 0.35, -fold * 0.13, -0.05], [s * 0.3, -0.09 - fold * 0.13, 0.21]], 0.009, horn, 9));
+    }
     for (let j = 0; j < 9; j++) {
       const tooth = new THREE.Mesh(cone, bone);
       tooth.scale.set(0.025, 0.083, 0.024);
@@ -452,18 +475,15 @@ export function buildDinosaur(riderIndex = 0) {
     const hip = new THREE.Group();
     hip.position.set(s * 0.49, 1.84, 0.61);
     root.add(hip);
-    ellipsoid(
-      hip,
-      skin,
-      [s * 0.07, -0.23, -0.08],
-      [0.32, 0.59, 0.42],
-      [0.34, 0, s * -0.1],
-    );
+    const thigh = anatomicalPart(hip, [[-0.86, 0.24, 0.13, 0.16], [-0.55, 0.15, 0.23, 0.27], [-0.2, 0.02, 0.33, 0.4], [0.14, -0.05, 0.29, 0.34], [0.33, -0.02, 0.12, 0.16]]);
+    thigh.geometry.rotateX(-Math.PI / 2);
+    thigh.position.x = s * 0.065;
     const shin = new THREE.Group();
     shin.position.set(s * 0.07, -0.72, -0.27);
     hip.add(shin);
-    ellipsoid(shin, skin, [0, -0.4, 0.12], [0.15, 0.55, 0.18], [-0.4, 0, 0]);
-    segment(shin, skin, [0, -0.1, 0], [0, -0.92, 0.27], 0.14, 0.085);
+    const calf = anatomicalPart(shin, [[-0.95, -0.28, 0.07, 0.09], [-0.66, -0.23, 0.12, 0.14], [-0.28, -0.07, 0.17, 0.2], [0.12, 0.01, 0.1, 0.12]]);
+    calf.geometry.rotateX(-Math.PI / 2);
+    shin.add(curveMesh([[s * 0.05, -0.11, 0.04], [s * 0.08, -0.51, 0.26], [0, -0.86, 0.29]], 0.035, belly, 10));
     const foot = new THREE.Group();
     foot.position.set(0, -1.74, 0.15);
     hip.add(foot);
@@ -496,16 +516,7 @@ export function buildDinosaur(riderIndex = 0) {
     parent.add(joint);
     const r = 0.43 * (1 - i / 8),
       next = Math.max(0.012, 0.43 * (1 - (i + 1) / 8));
-    const tailMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(next, r, 0.53, 20, 3),
-      skin,
-    );
-    tailMesh.rotation.x = Math.PI / 2;
-    tailMesh.position.z = 0.245;
-    tailMesh.scale.x = 1.05;
-    tailMesh.castShadow = true;
-    tailMesh.receiveShadow = true;
-    joint.add(tailMesh);
+    anatomicalPart(joint, [[0, 0, r, r * 0.9], [0.25, -0.005, (r + next) / 2, (r + next) * 0.45], [0.53, -0.01, next, next * 0.9]], skin, i * 0.53);
     joint.rotation.x = -0.05;
     tail.push(joint);
     parent = joint;
@@ -525,6 +536,8 @@ export function buildDinosaur(riderIndex = 0) {
   const saddle = new THREE.Group();
   saddle.position.set(0, 2.61, 0.15);
   root.add(saddle);
+  const saddleCloth = new THREE.MeshStandardMaterial({ ...fabric, color: "#9d6747" });
+  roundedPart(saddle, saddleCloth, [1.13, 0.08, 1.37], [0, -0.07, 0.06], 0.04);
   ellipsoid(saddle, leather, [0, 0, 0], [0.55, 0.1, 0.62]);
   ellipsoid(saddle, darkLeather, [0, 0.065, 0.04], [0.32, 0.085, 0.37]);
   ellipsoid(saddle, leather, [0, 0.13, 0.37], [0.32, 0.13, 0.065]);
@@ -534,6 +547,9 @@ export function buildDinosaur(riderIndex = 0) {
   for (const s of [-1, 1]) {
     ellipsoid(saddle, leather, [s * 0.53, -0.2, 0.4], [0.13, 0.23, 0.19]);
     ellipsoid(saddle, steel, [s * 0.66, -0.18, 0.4], [0.01, 0.035, 0.03]);
+    roundedPart(saddle, leather, [0.25, 0.34, 0.36], [s * 0.57, -0.24, 0.49], 0.055);
+    roundedPart(saddle, darkLeather, [0.27, 0.11, 0.37], [s * 0.58, -0.09, 0.49], 0.03);
+    for (let j = 0; j < 12; j++) segment(saddle, stitch, [s * 0.51, -0.015, -0.52 + j * 0.103], [s * 0.51, -0.015, -0.46 + j * 0.103], 0.006);
   }
   let rider = buildRider(riderIndex);
   root.add(rider.root);
@@ -548,6 +564,7 @@ export function buildDinosaur(riderIndex = 0) {
       new THREE.TubeGeometry(curve, 16, 0.012, 5, false),
       darkLeather,
     );
+    rein.userData.keepSeparate = true;
     root.add(rein);
     reins.push(rein);
   }
@@ -559,6 +576,7 @@ export function buildDinosaur(riderIndex = 0) {
     [0, -0.02, -0.74],
     [0, Math.PI / 2, 0],
   ).scale.y = 0.65;
+  mergeStaticMeshes(root);
   const home = new Map();
   root.traverse((o) => {
     if (o.isGroup)
@@ -723,11 +741,12 @@ export function buildCactus(height = 1.8) {
       }),
     ),
   );
-  return group;
+  return mergeStaticMeshes(group);
 }
 export function buildPterosaur() {
   const root = new THREE.Group(),
     mat = new THREE.MeshStandardMaterial({
+      ...leatherGrain,
       color: "#6a604e",
       roughness: 0.92,
       side: THREE.DoubleSide,
@@ -787,6 +806,10 @@ export function buildPterosaur() {
       "position",
       new THREE.Float32BufferAttribute(positions, 3),
     );
+    const wingUVs = [];
+    for (let i = 0; i < positions.length; i += 3)
+      wingUVs.push(Math.abs(positions[i]) / 2.05, (positions[i + 2] + 0.9) / 1.4);
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(wingUVs, 2));
     geometry.computeVertexNormals();
     const wing = new THREE.Mesh(geometry, mat);
     wing.castShadow = true;
@@ -813,7 +836,7 @@ export function buildPterosaur() {
   }
   segment(root, skinmat, [0, 0, 0.4], [0, -0.05, 1.05], 0.09, 0.01);
   root.userData.wings = wings;
-  return root;
+  return mergeStaticMeshes(root);
 }
 export function makePortrait(index) {
   const rider = buildRider(index);

@@ -31,6 +31,7 @@ import {
 import { DragLook } from "./drag-look.js";
 import { DeathOverlay } from "./death-overlay.js";
 import { MobileInput } from "./mobile-input.js";
+import { surfaceReady } from "./surface-detail.js";
 
 const $ = (id) => document.getElementById(id);
 let saved = {};
@@ -564,7 +565,7 @@ function frame(now) {
   }
   if (state.mode === "dead") return;
   const speed = state.mode === "running" ? state.speed : 0;
-  world.update(dt, state.time, speed);
+  world.update(dt, state.time, speed, state.y);
   audio.update(dt, speed, state.mode === "running", state.y > 0.1);
   updateCamera(dt);
   renderer.render(world.scene, camera);
@@ -716,21 +717,22 @@ function bindUI() {
 }
 function applyQuality() {
   renderer.setPixelRatio(
-    Math.min(devicePixelRatio, state.quality === "high" ? 1.65 : 1),
+    Math.min(devicePixelRatio, state.quality === "high" ? (innerWidth < 700 ? 1.5 : 1.65) : 1),
   );
   renderer.shadowMap.enabled = state.quality === "high";
   world.sun.castShadow = state.quality === "high";
+  world.setQuality(state.quality);
   renderer.setSize(innerWidth, innerHeight);
 }
 function init() {
   try {
     renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: state.quality === "high",
       powerPreference: "high-performance",
     });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setClearColor("#b6ac91");
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -755,10 +757,12 @@ function init() {
     deathOverlay = new DeathOverlay($("death-overlay"));
     pauseOverlay = new DeathOverlay($("pause-overlay"));
     bindUI();
-    for (let i = 0; i < 3; i++) {
-      document.querySelector(`.portrait-${i}`).style.backgroundImage =
-        `url(${makePortrait(i)})`;
-    }
+    surfaceReady.then(() => {
+      for (let i = 0; i < 3; i++) {
+        document.querySelector(`.portrait-${i}`).style.backgroundImage =
+          `url(${makePortrait(i)})`;
+      }
+    });
     window.addEventListener("resize", () => {
       camera.aspect = innerWidth / innerHeight;
       camera.fov = innerWidth < 700 ? 53 : 45;
@@ -769,9 +773,11 @@ function init() {
     });
     lastFrame = performance.now();
     requestAnimationFrame(frame);
-    requestAnimationFrame(() => {
-      $("loading").style.opacity = "0";
-      setTimeout(() => $("loading").remove(), 750);
+    Promise.race([Promise.all([world.ready, surfaceReady]), new Promise((resolve) => setTimeout(resolve, 4500))]).then(() => {
+      requestAnimationFrame(() => {
+        $("loading").style.opacity = "0";
+        setTimeout(() => $("loading")?.remove(), 750);
+      });
     });
     // A small read-only diagnostic surface supports automated functional validation.
     Object.defineProperty(window, "__saurian", {

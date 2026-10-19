@@ -1,18 +1,10 @@
 import * as THREE from "three";
 import { buildCactus, buildPterosaur } from "./creatures.js";
+import { terrainHeight, createAtmosphere, enhanceGround, createBadlands,
+  createVegetation, createRockField, updateLandscape } from "./landscape-detail.js";
 
 export const rand = (min, max) => min + Math.random() * (max - min);
 const temp = new THREE.Object3D();
-function terrainHeight(x, z) {
-  const edge = THREE.MathUtils.smoothstep(Math.abs(x), 7, 32);
-  return (
-    (Math.sin(x * 0.041 + z * 0.017) * 3.5 +
-      Math.cos(z * 0.032 - x * 0.009) * 2.2 +
-      Math.sin(x * 0.078 + z * 0.04) * 1.1) *
-      edge -
-    0.04
-  );
-}
 function sandTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 512;
@@ -44,7 +36,7 @@ function sandTexture() {
   return tex;
 }
 function rockGeometry() {
-  const geo = new THREE.IcosahedronGeometry(1, 2),
+  const geo = new THREE.IcosahedronGeometry(1, 0),
     p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i),
@@ -61,14 +53,14 @@ function rockGeometry() {
 export class DesertWorld {
   constructor(renderer) {
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2("#e1d2b5", 0.006);
+    this.scene.fog = new THREE.FogExp2("#cfb99d", 0.0036);
     this.moving = [];
     this.decorations = [];
     this.distance = 0;
-    const hemi = new THREE.HemisphereLight("#e4edec", "#796349", 2.1);
+    const hemi = new THREE.HemisphereLight("#d8e4ed", "#897054", 1.2);
     this.scene.add(hemi);
-    this.sun = new THREE.DirectionalLight("#ffdab0", 3.3);
-    this.sun.position.set(-40, 42, -35);
+    this.sun = new THREE.DirectionalLight("#ffe0b5", 3.2);
+    this.sun.position.set(-40, 35, 25);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.camera.left = -25;
@@ -82,10 +74,10 @@ export class DesertWorld {
     this.sun.shadow.radius = 3;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
-    const fill = new THREE.DirectionalLight("#f4e4ca", 1.65);
+    const fill = new THREE.DirectionalLight("#c6dce5", 0.7);
     fill.position.set(10, 12, 14);
     this.scene.add(fill);
-    this.createSky();
+    this.createSky(renderer);
     this.sand = sandTexture();
     const geo = new THREE.PlaneGeometry(650, 950, 150, 220);
     geo.rotateX(-Math.PI / 2);
@@ -93,7 +85,7 @@ export class DesertWorld {
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i),
         z = p.getZ(i);
-      p.setY(i, terrainHeight(x, z));
+      p.setY(i, terrainHeight(x, z - 240));
     }
     geo.computeVertexNormals();
     const ground = new THREE.Mesh(
@@ -109,6 +101,7 @@ export class DesertWorld {
     ground.position.z = -240;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    enhanceGround(this, ground);
     this.createTrail();
     this.createRocks();
     this.createMountains();
@@ -123,25 +116,22 @@ export class DesertWorld {
       this.flock.push(bird);
     }
     this.renderer = renderer;
+    this.ready = Promise.all(this.surfaceTasks || []);
   }
-  createSky() {
-    const geo = new THREE.SphereGeometry(450, 32, 24);
-    const mat = new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      uniforms: {
-        top: { value: new THREE.Color("#6d97a5") },
-        horizon: { value: new THREE.Color("#eed9b4") },
-        bottom: { value: new THREE.Color("#c7ac83") },
-        sunDir: { value: new THREE.Vector3(-0.6, 0.34, -0.72).normalize() },
-      },
-      vertexShader:
-        "varying vec3 vWorld; void main(){vWorld=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
-      fragmentShader: `varying vec3 vWorld;uniform vec3 top;uniform vec3 horizon;uniform vec3 bottom;uniform vec3 sunDir;void main(){vec3 d=normalize(vWorld);float h=max(d.y,0.);vec3 col=mix(horizon,top,pow(h,.28));if(d.y<0.)col=mix(horizon,bottom,min(-d.y*3.,1.));float sun=max(dot(d,sunDir),0.);col+=vec3(.75,.36,.12)*pow(sun,15.)*.3;col=mix(col,vec3(1.,.92,.7),smoothstep(.9991,.9995,sun));float clouds=sin(d.x*12.+d.z*7.)*sin(d.z*24.-d.x*13.)*.5+.5;col+=vec3(.09,.07,.04)*clouds*smoothstep(.01,.2,d.y)*(1.-smoothstep(.2,.6,d.y));gl_FragColor=vec4(col,1.);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}`,
-    });
-    this.sky = new THREE.Mesh(geo, mat);
-    this.scene.add(this.sky);
+  setQuality(quality) {
+    this.quality = quality;
+    this.scene.environment = quality === "high" ? this.environmentTarget.texture : null;
+    const count = quality === "high" ? 4200 : 2400;
+    this.grassBlades.count = count;
+    this.grassTwin.children[0].count = count;
+    const shadowSize = quality === "high" && innerWidth >= 700 ? 2048 : 1024;
+    if (this.sun.shadow.mapSize.x !== shadowSize) {
+      this.sun.shadow.mapSize.set(shadowSize, shadowSize);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
   }
+  createSky(renderer) { createAtmosphere(this, renderer); }
   createTrail() {
     const c = document.createElement("canvas");
     c.width = 256;
@@ -207,167 +197,9 @@ export class DesertWorld {
     this.scene.add(pebble);
     this.pebbles = pebble;
   }
-  createRocks() {
-    const rock = new THREE.InstancedMesh(
-      rockGeometry(),
-      new THREE.MeshStandardMaterial({ color: "#9a8569", roughness: 1 }),
-      155,
-    );
-    for (let i = 0; i < 155; i++) {
-      const x = (i % 2 ? 1 : -1) * rand(9, 110),
-        z = rand(-300, 100);
-      temp.position.set(x, terrainHeight(x, z + 240) - 0.02, z);
-      const s = rand(0.15, 1.8);
-      temp.scale.set(s * rand(0.8, 1.7), s * 0.65, s);
-      temp.rotation.set(rand(0, 0.2), rand(0, 7), rand(-0.2, 0.2));
-      temp.updateMatrix();
-      rock.setMatrixAt(i, temp.matrix);
-    }
-    rock.castShadow = true;
-    rock.receiveShadow = true;
-    this.scene.add(rock);
-    this.rocks = rock;
-  }
-  createMountains() {
-    const material = new THREE.MeshStandardMaterial({
-      color: "#b68f72",
-      roughness: 1,
-    });
-    const distant = new THREE.MeshStandardMaterial({
-      color: "#aa9781",
-      roughness: 1,
-    });
-    for (let i = 0; i < 22; i++) {
-      const group = new THREE.Group(),
-        side = i % 2 ? 1 : -1;
-      const h = rand(12, 29),
-        w = rand(12, 24);
-      // Layered eroded mesas with sloping talus at the foot.
-      const baseGeo = new THREE.CylinderGeometry(
-        w * 0.52,
-        w * 1.2,
-        h * 0.65,
-        12,
-        7,
-      );
-      const pos = baseGeo.attributes.position;
-      for (let j = 0; j < pos.count; j++) {
-        const x = pos.getX(j),
-          y = pos.getY(j),
-          z = pos.getZ(j);
-        pos.setXYZ(
-          j,
-          x * (1 + 0.06 * Math.sin(y * 2 + z)),
-          y + Math.sin(x * 3 + z) * 0.35,
-          z * (1 + 0.05 * Math.cos(y * 3 + x)),
-        );
-      }
-      baseGeo.computeVertexNormals();
-      const base = new THREE.Mesh(baseGeo, i > 11 ? distant : material);
-      base.position.y = h * 0.325 - 1;
-      group.add(base);
-      const topGeo = new THREE.CylinderGeometry(
-        w * 0.37,
-        w * 0.51,
-        h * 0.5,
-        12,
-        14,
-      );
-      const pp = topGeo.attributes.position;
-      for (let j = 0; j < pp.count; j++) {
-        const x = pp.getX(j),
-          y = pp.getY(j),
-          z = pp.getZ(j);
-        const wave = 1 + Math.sin(y * 2.3) * 0.025 + Math.cos(z * 3 + x) * 0.04;
-        pp.setXYZ(j, x * wave, y + Math.sin(x * 4 + z * 3) * 0.25, z * wave);
-      }
-      topGeo.computeVertexNormals();
-      const top = new THREE.Mesh(topGeo, i > 11 ? distant : material);
-      top.position.y = h * 0.73;
-      group.add(top);
-      for (let j = 0; j < 5; j++) {
-        const stripe = new THREE.Mesh(
-          new THREE.CylinderGeometry(
-            w * (0.39 + j * 0.019),
-            w * (0.4 + j * 0.019),
-            0.12,
-            7,
-          ),
-          new THREE.MeshStandardMaterial({
-            color: j % 2 ? "#9e785d" : "#b99372",
-            roughness: 1,
-          }),
-        );
-        stripe.position.y = h * 0.8 - j * h * 0.07;
-        group.add(stripe);
-      }
-      group.position.set(
-        side * (50 + Math.floor(i / 2) * 12),
-        rand(-2, 1),
-        -90 - Math.floor(i / 2) * 25,
-      );
-      group.rotation.y = rand(0, 6.3);
-      group.scale.z = rand(0.6, 1.1);
-      this.scene.add(group);
-    }
-    // Slender hoodoos nearer to the trail frame the horizon.
-    for (let i = 0; i < 7; i++) {
-      const s = i % 2 ? 1 : -1,
-        x = s * rand(24, 55),
-        z = rand(-110, -20),
-        h = rand(5, 12);
-      const pillar = new THREE.Mesh(
-        new THREE.CylinderGeometry(rand(1.4, 2), rand(2, 3.8), h, 7, 4),
-        material,
-      );
-      pillar.position.set(x, h / 2 - 1, z);
-      pillar.castShadow = true;
-      pillar.receiveShadow = true;
-      this.scene.add(pillar);
-      const cap = new THREE.Mesh(rockGeometry(), material);
-      cap.scale.set(rand(2.5, 3.8), 1.2, rand(2, 3));
-      cap.position.set(x, h - 0.5, z);
-      cap.castShadow = true;
-      this.scene.add(cap);
-    }
-  }
-  createPlants() {
-    this.plants = [];
-    for (let i = 0; i < 22; i++) {
-      const cactus = buildCactus(rand(1.5, 3.8)),
-        x = (i % 2 ? 1 : -1) * rand(8, 42),
-        z = rand(-170, 45);
-      cactus.position.set(x, Math.max(0, terrainHeight(x, z + 240)), z);
-      cactus.rotation.y = rand(0, 6);
-      this.scene.add(cactus);
-      this.plants.push(cactus);
-    }
-    const blade = new THREE.ConeGeometry(0.035, 1, 3);
-    blade.translate(0, 0.5, 0);
-    const grass = new THREE.InstancedMesh(
-      blade,
-      new THREE.MeshStandardMaterial({ color: "#8f8557", roughness: 1 }),
-      1500,
-    );
-    for (let i = 0; i < 1500; i++) {
-      const cluster = Math.floor(i / 6);
-      let seed = cluster * 172.73;
-      const x =
-          (cluster % 2 ? 1 : -1) * (7 + (Math.sin(seed) * 0.5 + 0.5) * 40),
-        z = -180 + (Math.sin(seed * 1.72) * 0.5 + 0.5) * 235;
-      temp.position.set(
-        x + rand(-0.3, 0.3),
-        Math.max(0, terrainHeight(x, z + 240)) - 0.04,
-        z + rand(-0.3, 0.3),
-      );
-      temp.rotation.set(rand(-0.5, 0.5), rand(0, 6.2), rand(-0.5, 0.5));
-      temp.scale.set(1, rand(0.15, 0.7), 1);
-      temp.updateMatrix();
-      grass.setMatrixAt(i, temp.matrix);
-    }
-    this.scene.add(grass);
-    this.grass = grass;
-  }
+  createRocks() { createRockField(this); }
+  createMountains() { createBadlands(this); }
+  createPlants() { createVegetation(this, buildCactus); }
   createDust() {
     const positions = new Float32Array(220 * 3);
     for (let i = 0; i < 220; i++) {
@@ -436,22 +268,21 @@ export class DesertWorld {
       }
     }
   }
-  update(dt, time, speed = 0) {
+  update(dt, time, speed = 0, mountHeight = 0) {
     this.distance += speed * dt;
-    this.sand.offset.y = (-this.distance / 950) * 90;
+    this.sand.offset.y = (-this.distance / 950) * this.sand.repeat.y;
     this.roadTexture.offset.y = (-this.distance / 700) * 35;
     this.plants.forEach((p) => {
       p.position.z += speed * dt;
       if (p.position.z > 55) {
-        p.position.z -= 235;
+        p.position.z -= 260;
         p.position.y = Math.max(
           0,
-          terrainHeight(p.position.x, p.position.z + 240),
+          terrainHeight(p.position.x, p.position.z),
         );
       }
     });
-    this.rocks.position.z = this.distance % 100;
-    this.grass.position.z = this.distance % 80;
+    updateLandscape(this, time, mountHeight);
     this.pebbles.position.z = this.distance % 80;
     this.flock.forEach((bird, i) => {
       bird.position.x = 30 + Math.sin(time * 0.06 + i) * 22;

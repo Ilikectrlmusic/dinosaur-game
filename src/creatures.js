@@ -754,6 +754,16 @@ export function buildCactus(height = 1.8) {
   );
   return mergeStaticMeshes(group);
 }
+export function buildCactusCluster(members) {
+  const group = new THREE.Group();
+  for (const { x, z, height } of members) {
+    const cactus = buildCactus(height);
+    cactus.position.set(x, 0, z);
+    group.add(cactus);
+  }
+  return group;
+}
+
 export function buildPterosaur() {
   const root = new THREE.Group(),
     mat = new THREE.MeshStandardMaterial({

@@ -12,6 +12,7 @@ import {
   buildDinosaur,
   animateDinosaur,
   buildCactus,
+  buildCactusCluster,
   buildPterosaur,
   makePortrait,
 } from "./creatures.js";
@@ -305,7 +306,7 @@ function jump() {
 }
 function spawnObstacle(spec, z = -95) {
   const bird = spec.type === "bird";
-  const object = bird ? buildPterosaur() : buildCactus(spec.height);
+  const object = bird ? buildPterosaur() : spec.members ? buildCactusCluster(spec.members) : buildCactus(spec.height);
   object.userData = { ...object.userData, ...spec, passed: false };
   object.position.set(0, bird ? spec.flightHeight : 0, z);
   if (bird) object.rotation.y = Math.PI;
@@ -314,8 +315,9 @@ function spawnObstacle(spec, z = -95) {
   return object;
 }
 function spawnWave() {
-  spawnObstacle(chooseObstacle(state.distance));
-  state.spawn = spawnDelay(state.difficulty, state.speed);
+  const spec = chooseObstacle(state.distance);
+  spawnObstacle(spec);
+  state.spawn = spawnDelay(state.difficulty, state.speed, Math.random, spec.depth || 0);
 }
 function updateHUD() {
   $("distance").innerHTML =
@@ -354,7 +356,9 @@ function crash(obstacle) {
       ? obstacle.userData.variant === "low"
         ? "低飞翼龙挡住了去路。它贴近地面，需要提前起跳越过。"
         : "高飞翼龙掠过骑手。它无法跳过，需要按住低头从下方穿过。"
-      : "没能越过这片荆棘。下次接近仙人掌时，试着提前起跳。";
+      : obstacle.userData.variant === "triple"
+        ? "没能一次越过三连仙人掌。留意整组的长度，让起跳和落地都避开荆棘。"
+        : "没能越过这片荆棘。下次接近仙人掌时，试着提前起跳。";
   // Register the transition first: optional animation/audio must never strand the UI.
   deathTimeout = setTimeout(() => finishCrash(generation), 2700);
   try {
@@ -437,12 +441,13 @@ function updateGameplay(dt) {
         y: obstacle.position.y,
         z,
         height: obstacle.userData.height,
+        members: obstacle.userData.members,
       })
     ) {
       crash(obstacle);
       break;
     }
-    if (z > 2 && !obstacle.userData.passed) {
+    if (z > 2 + (obstacle.userData.depth || 0) && !obstacle.userData.passed) {
       obstacle.userData.passed = true;
       if (dx < 1.5) toast(bird ? "漂亮的闪避！" : "完美越过！");
     }
@@ -802,6 +807,8 @@ function init() {
               y: o.position.y,
               z: o.position.z,
               height: o.userData.height,
+              depth: o.userData.depth || 0,
+              members: o.userData.members?.map((member) => ({ ...member })),
             })),
             camera: {
               position: camera.position.toArray(),

@@ -4,6 +4,7 @@ import {
   CONFIG, GRAVITY, JUMP_VELOCITY, CACTUS_HEIGHTS, BIRD_HEIGHTS,
   BIRD_BOB, BIRD_SPEED_BONUS, overlapsRunner, advanceJump,
   speedAtTime, chooseObstacle, spawnDelay,
+  CACTUS_CLUSTER_DISTANCE, CACTUS_CLUSTER_SPACING, BIRD_UNLOCK_DISTANCE,
 } from "../src/rules.js";
 const runner = { x: 0, y: 0, duck: 0 },
   cactus = { type: "cactus", x: 0, z: 0, height: 1.65, y: 0 },
@@ -67,38 +68,93 @@ test("low birds require jumping and high birds require ducking, including both e
   }
 });
 
-test("the opening teaches cactus jumps and later runs contain all five obstacle variants", () => {
+test("birds and triple cacti unlock in stages after the opening cactus jumps", () => {
   let seed = 7321;
   const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-  for (let i = 0; i < 50; i++) assert.equal(chooseObstacle(40, random).type, "cactus");
+  for (const distance of [0, 40, BIRD_UNLOCK_DISTANCE - 0.01]) for (let i = 0; i < 100; i++) {
+    const obstacle = chooseObstacle(distance, random);
+    assert.equal(obstacle.type, "cactus");
+    assert.notEqual(obstacle.variant, "triple");
+  }
+  assert.equal(chooseObstacle(BIRD_UNLOCK_DISTANCE, () => 0).type, "bird");
+  const middle = new Set();
+  for (let i = 0; i < 100; i++) {
+    const obstacle = chooseObstacle(CACTUS_CLUSTER_DISTANCE - 0.01, random);
+    assert.notEqual(obstacle.variant, "triple");
+    middle.add(obstacle.type);
+  }
+  assert.ok(middle.has("bird"));
   const seen = new Set();
   for (let i = 0; i < 500; i++) {
     const obstacle = chooseObstacle(200 + i * 20, random);
     seen.add(`${obstacle.type}:${obstacle.variant}`);
     if (obstacle.type === "bird") assert.equal(obstacle.flightHeight, BIRD_HEIGHTS[obstacle.variant]);
-    else assert.equal(obstacle.height, CACTUS_HEIGHTS[obstacle.variant]);
+    else if (obstacle.variant === "triple") {
+      assert.ok(obstacle.members.every((member) => member.height === obstacle.height));
+      assert.equal(obstacle.members.length, 3);
+      assert.deepEqual(obstacle.members.map((member) => member.z), [0, -CACTUS_CLUSTER_SPACING, -2 * CACTUS_CLUSTER_SPACING]);
+    } else assert.equal(obstacle.height, CACTUS_HEIGHTS[obstacle.variant]);
   }
-  assert.deepEqual([...seen].sort(), ["bird:high", "bird:low", "cactus:medium", "cactus:small", "cactus:tall"]);
+  assert.deepEqual([...seen].sort(), ["bird:high", "bird:low", "cactus:medium", "cactus:small", "cactus:tall", "cactus:triple"]);
 });
 
-test("even a faster bird behind a cactus leaves time to land before ducking throughout acceleration", () => {
+test("triple cacti have a narrower but reachable jump window at every unlocked speed and difficulty", () => {
+  const members = [0, 1, 2].map((i) => ({ x: 0, z: -i * CACTUS_CLUSTER_SPACING, height: CACTUS_HEIGHTS.tall }));
+  const triple = { ...cactus, height: CACTUS_HEIGHTS.tall, members };
   for (const [difficulty, config] of Object.entries(CONFIG)) {
-    for (let speed = config.speed; speed <= config.maxSpeed; speed += 0.25) {
-      const gap = spawnDelay(difficulty, speed, () => 0);
+    const unlockSpeed = Math.min(config.maxSpeed, Math.sqrt(config.speed ** 2 + 2 * config.acceleration * CACTUS_CLUSTER_DISTANCE));
+    for (let speed = unlockSpeed; speed < config.maxSpeed + 0.249; speed += 0.25) {
+      speed = Math.min(speed, config.maxSpeed);
+      const distanceAt = (t) => {
+        const accelerating = Math.min(t, (config.maxSpeed - speed) / config.acceleration);
+        return speed * accelerating + config.acceleration * accelerating ** 2 / 2 + config.maxSpeed * (t - accelerating);
+      };
+      const clears = (lead, obstacle, dt = 1 / 240) => {
+        for (let t = 0; t < 1.25; t += dt) {
+          const y = Math.max(0, JUMP_VELOCITY * t - GRAVITY * t * t / 2);
+          if (overlapsRunner({ ...runner, y }, { ...obstacle, z: distanceAt(t) - distanceAt(lead) })) return false;
+        }
+        return true;
+      };
+      const allowed = [], single = [];
+      for (let lead = 0.2; lead < 0.8; lead += 0.005) {
+        if (clears(lead, triple)) allowed.push(lead);
+        if (clears(lead, { ...triple, members: undefined })) single.push(lead);
+      }
+      assert.ok(allowed.at(-1) - allowed[0] >= 0.17, `${difficulty} at ${speed}: leave a usable timing window`);
+      assert.ok(allowed.length < single.length, "the full group should demand more precise timing than one tall cactus");
+      for (const dt of [1 / 30, 1 / 60, 1 / 120]) assert.ok(clears(0.42, triple, dt));
+      assert.equal(clears(0.15, triple), false, "jumping too late must hit the first cactus");
+      assert.equal(clears(0.8, triple), false, "landing in the group must hit a trailing cactus");
+      if (speed === config.maxSpeed) break;
+    }
+  }
+});
+
+test("the last cactus remains lethal after the first two have passed", () => {
+  const members = [0, 1, 2].map((i) => ({ x: 0, z: -i * CACTUS_CLUSTER_SPACING, height: 2.05 }));
+  assert.equal(overlapsRunner(runner, { ...cactus, z: 2.1, members }), true);
+  assert.equal(overlapsRunner(runner, { ...cactus, z: 3.1, members }), false);
+});
+
+test("a faster bird behind a single or triple cactus leaves time to land and duck throughout acceleration", () => {
+  for (const [difficulty, config] of Object.entries(CONFIG)) {
+    for (let speed = config.speed; speed <= config.maxSpeed; speed += 0.25) for (const depth of [0, 2 * CACTUS_CLUSTER_SPACING]) {
+      const gap = spawnDelay(difficulty, speed, () => 0, depth);
       const distanceAt = (time) => {
         const accelerating = Math.min(time, (config.maxSpeed - speed) / config.acceleration);
         return speed * accelerating + config.acceleration * accelerating ** 2 / 2 + config.maxSpeed * (time - accelerating);
       };
-      const arrival = (distance) => {
+      const arrival = (distance, target = 95) => {
         let from = 0, to = 20;
         for (let i = 0; i < 40; i++) {
           const middle = (from + to) / 2;
-          if (distance(middle) < 95) from = middle;
+          if (distance(middle) < target) from = middle;
           else to = middle;
         }
         return to;
       };
-      const cactusArrival = arrival(distanceAt);
+      const cactusArrival = arrival(distanceAt, 95 + depth);
       const birdArrival = arrival((time) => distanceAt(time + gap) - distanceAt(gap) + BIRD_SPEED_BONUS * time) + gap;
       assert.ok(birdArrival - cactusArrival > 1.1, `${difficulty} at ${speed} m/s needs more recovery time`);
     }

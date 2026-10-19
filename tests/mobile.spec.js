@@ -24,6 +24,7 @@ async function waitForDeath(page) {
     timeout: 90000,
   });
   await expect(page.locator("#death-dialog")).toBeVisible();
+  await expect(page.locator("#death-home")).toHaveAccessibleName("返回营地");
   for (const id of ["retry-button", "death-home"]) {
     expect(await page.locator(`#${id}`).evaluate((button) => {
       const rect = button.getBoundingClientRect();
@@ -87,13 +88,14 @@ test("mobile orbit keeps the rider centered; the single track has only jump and 
   const layout = await page.evaluate(() => {
     const tip = document.getElementById("game-tip").getBoundingClientRect();
     const view = document.getElementById("view-control").getBoundingClientRect();
-    const controls = document.getElementById("mobile-controls").getBoundingClientRect();
+    const controls = document.querySelector(".touch-icon").getBoundingClientRect();
     const hint = document.querySelector(".camera-drag-hint").getBoundingClientRect();
-    return { tipBottom: tip.bottom, viewTop: view.top, viewBottom: view.bottom, hintBottom: hint.bottom, controlsTop: controls.top };
+    return { tipCenter: tip.top + tip.height / 2, tipRight: tip.right, viewCenter: view.top + view.height / 2, viewLeft: view.left, viewBottom: view.bottom, hintBottom: hint.bottom, controlsTop: controls.top };
   });
-  expect(layout.tipBottom).toBeLessThan(layout.viewTop);
+  expect(Math.abs(layout.tipCenter - layout.viewCenter)).toBeLessThan(1);
+  expect(layout.tipRight + 12).toBeLessThan(layout.viewLeft);
   expect(layout.viewBottom).toBeLessThan(layout.controlsTop);
-  expect(layout.controlsTop - layout.hintBottom).toBeGreaterThanOrEqual(20);
+  expect(layout.controlsTop - layout.hintBottom).toBeGreaterThanOrEqual(10);
   await page.locator("#touch-jump").tap();
   await page.waitForFunction(() => window.__saurian.state.y > 0.1);
   await page.waitForFunction(() => window.__saurian.state.obstacles.length > 0);

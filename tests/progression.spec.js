@@ -84,6 +84,8 @@ test("original rules: survive acceleration and all obstacle heights, then verify
       if (shouldJump) await page.keyboard.press("Space");
       await page.clock.runFor(100);
       state = await page.evaluate(() => window.__saurian.state);
+      if (state.distance < 150) expect(state.obstacles.every((obstacle) => obstacle.type === "cactus")).toBe(true);
+      if (state.distance < 300) expect(state.obstacles.every((obstacle) => obstacle.variant !== "triple")).toBe(true);
       if (state.mode !== "running") {
         expect(failure, `unexpected collision: ${JSON.stringify(state)}`).toBeTruthy();
         break;
@@ -101,7 +103,7 @@ test("original rules: survive acceleration and all obstacle heights, then verify
         pauseChecked = true;
       }
     }
-    expect([...seen].sort()).toEqual(["bird:high", "bird:low", "cactus:medium", "cactus:small", "cactus:tall"]);
+    expect([...seen].sort()).toEqual(["bird:high", "bird:low", "cactus:medium", "cactus:small", "cactus:tall", "cactus:triple"]);
     expect(speeds[2].speed).toBeGreaterThan(speeds[1].speed);
     expect(speeds.at(-1).speed).toBe(CONFIG[difficulty].maxSpeed);
     await page.keyboard.up("ArrowDown");
@@ -125,4 +127,42 @@ test("original rules: survive acceleration and all obstacle heights, then verify
   }
   await expect(page.locator("#menu")).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("triple cacti render as three plants and retain three physical colliders during a crash", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("saurian-preferences", JSON.stringify({ quality: "low", sound: false })));
+  await page.goto("/");
+  await page.waitForFunction(() => window.__saurian);
+  const result = await page.evaluate(async () => {
+    const { buildDinosaur, buildCactusCluster, animateDinosaur } = await import("/src/creatures.js");
+    const { CrashPhysics } = await import("/src/physics.js");
+    const { chooseObstacle } = await import("/src/rules.js");
+    const values = [0.9, 0, 0.9];
+    const spec = chooseObstacle(300, () => values.shift());
+    const dino = buildDinosaur();
+    const scene = new dino.root.constructor();
+    scene.add(dino.root);
+    animateDinosaur(dino, 0);
+    const cluster = buildCactusCluster(spec.members);
+    cluster.userData = spec;
+    cluster.position.z = -1;
+    scene.add(cluster);
+    const plants = cluster.children.map((plant) => plant.position.toArray());
+    const physics = new CrashPhysics(scene, dino, 20, cluster);
+    const collider = physics.world.bodies.find((body) => body.mass === 0 && body.shapes.length === 3);
+    const offsets = collider?.shapeOffsets.map((position) => [position.x, position.y, position.z]);
+    for (let i = 0; i < 360; i++) physics.update(1 / 120);
+    const result = {
+      plants, offsets,
+      finite: physics.world.bodies.every((body) => [body.position.x, body.position.y, body.position.z, body.quaternion.w].every(Number.isFinite)),
+      mountY: physics.centerBody.position.y,
+    };
+    physics.dispose();
+    return result;
+  });
+  expect(result.plants).toEqual([[0, 0, 0], [0, 0, -1.05], [0, 0, -2.1]]);
+  expect(result.offsets).toEqual([[0, 1.025, 0], [0, 1.025, -1.05], [0, 1.025, -2.1]]);
+  expect(result.finite).toBe(true);
+  expect(result.mountY).toBeGreaterThan(0);
+  expect(result.mountY).toBeLessThan(1.5);
 });

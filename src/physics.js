@@ -122,10 +122,13 @@ export class CrashPhysics {
         offset: new THREE.Vector3(),
       });
     } else {
-      obstacleBody.addShape(
-        new CANNON.Cylinder(0.18, 0.18, obstacle.userData.height, 10),
-        new CANNON.Vec3(0, obstacle.userData.height / 2, 0),
-      );
+      const members = obstacle.userData.members || [{ x: 0, z: 0, height: obstacle.userData.height }];
+      for (const { x, z, height } of members) {
+        obstacleBody.addShape(
+          new CANNON.Cylinder(0.18, 0.18, height, 10),
+          new CANNON.Vec3(x, height / 2, z),
+        );
+      }
       obstacleBody.position.copy(obstacle.position);
     }
     this.world.addBody(obstacleBody);

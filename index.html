@@ -205,8 +205,8 @@
       ><span>高飞鸟按住低头</span>
     </div>
     <div class="mobile-controls hidden" id="mobile-controls">
-      <button type="button" id="touch-duck" aria-label="按住低头">↓</button
-      ><button type="button" id="touch-jump" aria-label="跳跃">↑</button>
+      <button type="button" id="touch-duck" aria-label="按住低头"><span class="touch-icon" aria-hidden="true">↓</span></button
+      ><button type="button" id="touch-jump" aria-label="跳跃"><span class="touch-icon" aria-hidden="true">↑</span></button>
     </div>
     <div class="toast" id="toast" role="status"></div>
     <dialog id="guide-dialog" class="modal">
@@ -223,14 +223,14 @@
           <p>
             按 <kbd>SPACE</kbd> 或
             <kbd>↑</kbd>
-            跳跃。仙人掌有高、中、矮三种，接近时判断高度起跳；腾空后无法再次跳跃。
+            跳跃。仙人掌有高、中、矮三种；300 米后还会出现三连仙人掌，需要一次越过整组。腾空后无法再次跳跃。
           </p>
         </div>
         <div>
           <span class="guide-number">02</span>
           <h3>留意天空</h3>
           <p>
-            翼龙有两种高度：贴地低飞的需要跳过；较高的无法跳过，必须按住
+            150 米后翼龙开始出现。贴地低飞的需要跳过；较高的无法跳过，必须按住
             <kbd>↓</kbd> 或 <kbd>S</kbd> 伏低身体穿过。
           </p>
         </div>
@@ -254,7 +254,7 @@
         </div>
       </div>
       <p class="guide-footnote">
-        手机可使用屏幕下方按钮。碰撞使用刚体与关节物理；音效由浏览器实时合成。
+        手机左下角按住低头，右下角轻触跳跃；圆形按钮周围整片区域都可操作。
       </p>
       <button class="secondary-button modal-close-action">
         记住了，出发吧 ↗
@@ -336,7 +336,7 @@
         <button type="button" class="start-button" id="retry-button" autofocus>
           再赴荒野 <span>↗</span></button
         ><button type="button" class="camp-button" id="death-home">
-          返回营地，换一位骑手 <span aria-hidden="true">↶</span></button
+          返回营地 <span aria-hidden="true">↶</span></button
         ><span class="death-shortcut"><kbd>R</kbd> 快速重新开始</span>
       </section>
     </div>

@@ -688,7 +688,7 @@ kbd {
 .toast {
   position: fixed;
   z-index: 10;
-  top: 92px;
+  top: 72px;
   left: 50%;
   transform: translate(-50%, -15px);
   padding: 11px 20px;
@@ -1037,12 +1037,13 @@ select {
 .mobile-controls {
   position: fixed;
   z-index: 5;
-  bottom: var(--touch-bottom);
-  left: 20px;
-  right: 20px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: clamp(160px, 25vh, 200px);
+  height: clamp(160px, 25svh, 200px);
   display: none;
-  gap: 10px;
-  justify-content: space-between;
+  gap: 0;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -1053,20 +1054,35 @@ select {
   -webkit-touch-callout: none;
 }
 .mobile-controls button {
+  position: relative;
+  width: 50%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+}
+.mobile-controls .touch-icon {
+  position: absolute;
+  bottom: var(--touch-bottom);
+  left: 20px;
+  display: grid;
+  place-items: center;
   width: 54px;
   height: 54px;
   border: 1px solid #f3eddf55;
   background: #25382b80;
   border-radius: 50%;
   font-size: 25px;
-  touch-action: none;
   backdrop-filter: blur(10px);
 }
-.mobile-controls button.is-held {
+.mobile-controls button.is-held .touch-icon {
   border-color: var(--orange);
   background: #8d6a42d9;
 }
-.mobile-controls button:last-child {
+.mobile-controls button:last-child .touch-icon {
+  left: auto;
+  right: 20px;
   background: #ee9564cc;
   color: #293326;
 }
@@ -1404,7 +1420,9 @@ select {
   .footer {
     left: 5%;
     right: 5%;
-    height: 55px;
+    height: calc(55px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    justify-content: flex-start;
   }
   .controls-hint {
     gap: 12px;
@@ -1421,7 +1439,7 @@ select {
     min-width: 17px;
   }
   .view-control {
-    bottom: 62px;
+    bottom: calc(26px + env(safe-area-inset-bottom, 0px));
     right: 5%;
     gap: 7px;
     border-bottom: 0;
@@ -1486,26 +1504,37 @@ select {
     font-size: 23px;
   }
   .playing .view-control {
-    bottom: calc(var(--touch-bottom) + 104px - var(--mobile-guidance-drop, 12px));
+    bottom: calc(var(--touch-bottom) + 84px);
     right: 18px;
+    height: 36px;
+    z-index: 6;
     background: #26352966;
     padding: 9px 12px;
   }
   .game-tip {
-    bottom: calc(var(--touch-bottom) + 157px - var(--mobile-guidance-drop, 12px));
+    bottom: calc(var(--touch-bottom) + 84px);
+    left: 18px;
+    transform: none;
+    display: grid;
+    grid-template-columns: 17px minmax(0, 1fr) 17px minmax(0, 1fr);
+    align-content: center;
+    height: 36px;
+    width: min(220px, calc(100% - 146px));
     font-size: 8px;
-    gap: 7px;
-    padding: 9px 12px;
+    column-gap: 6px;
+    row-gap: 0;
+    padding: 4px 10px;
+    white-space: normal;
   }
   .game-tip .desktop-key,
   .view-control > kbd {
     display: none;
   }
   .game-tip .mobile-key {
-    display: inline-block;
+    display: inline-flex;
   }
   .game-tip i {
-    margin: 0 3px;
+    display: none;
   }
   .mobile-controls:not(.hidden) {
     display: flex;

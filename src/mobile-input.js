@@ -55,13 +55,14 @@ export class MobileInput {
     const button = this.pointers.get(id);
     if (!button) return;
     this.pointers.delete(id);
-    button.classList.remove("is-held");
+    const stillHeld = [...this.pointers.values()].includes(button);
+    if (!stillHeld) button.classList.remove("is-held");
     try {
       if (button.hasPointerCapture(id)) button.releasePointerCapture(id);
     } catch {
       /* A cancelled pointer may already have been released by Safari. */
     }
-    if (button.id === "touch-duck") this.onDuck(false);
+    if (button.id === "touch-duck" && !stillHeld) this.onDuck(false);
   }
 
   reset() {

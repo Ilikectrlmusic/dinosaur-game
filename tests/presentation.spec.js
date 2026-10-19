@@ -20,6 +20,7 @@ async function openControlledGame(page) {
   ));
   await page.goto("/");
   await page.waitForFunction(() => window.__saurian?.renderer.render.frame > 2);
+  await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => { window.__skipGraphics = true; });
   await page.clock.fastForward(1000);
   await expect(page.locator("#loading")).toHaveCount(0);
@@ -34,8 +35,9 @@ async function layout(page) {
     return {
       tipBottom: innerHeight - tip.getBoundingClientRect().bottom,
       viewBottom: innerHeight - view.getBoundingClientRect().bottom,
-      tipToView: view.getBoundingClientRect().top - tip.getBoundingClientRect().bottom,
-      hintToControls: document.getElementById("mobile-controls").getBoundingClientRect().top - hint.getBoundingClientRect().bottom,
+      centerDifference: tip.getBoundingClientRect().top + tip.getBoundingClientRect().height / 2 - view.getBoundingClientRect().top - view.getBoundingClientRect().height / 2,
+      horizontalGap: view.getBoundingClientRect().left - tip.getBoundingClientRect().right,
+      hintToControls: document.querySelector(".touch-icon").getBoundingClientRect().top - hint.getBoundingClientRect().bottom,
     };
   });
 }
@@ -60,14 +62,31 @@ for (const mobile of [false, true]) {
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await openControlledGame(page);
+      if (mobile) {
+        for (const width of [320, 390]) {
+          await page.setViewportSize({ width, height: 844 });
+          const camp = await page.evaluate(() => {
+            const view = document.getElementById("view-control").getBoundingClientRect();
+            const footer = document.getElementById("footer").getBoundingClientRect();
+            const hint = document.querySelector(".camera-drag-hint").getBoundingClientRect();
+            const controls = document.querySelector(".controls-hint").getBoundingClientRect();
+            return { borderGap: view.top - footer.top, edgeGap: innerHeight - hint.bottom, textGap: hint.left - controls.right };
+          });
+          expect(camp.borderGap).toBeGreaterThanOrEqual(4);
+          expect(camp.edgeGap).toBeGreaterThanOrEqual(6);
+          expect(camp.textGap).toBeGreaterThan(12);
+        }
+      }
+      await expect(page.locator("#toast")).toHaveCSS("top", "72px");
       await page.locator("#start-button").click();
       await page.clock.runFor(100);
       const opening = await layout(page);
-      expect(opening.tipBottom).toBe(mobile ? 165 : 39);
-      expect(opening.viewBottom).toBe(mobile ? 112 : 32);
+      expect(opening.tipBottom).toBe(mobile ? 104 : 39);
+      expect(opening.viewBottom).toBe(mobile ? 104 : 32);
       if (mobile) {
-        expect(opening.tipToView).toBeGreaterThan(10);
-        expect(opening.hintToControls).toBeGreaterThanOrEqual(20);
+        expect(Math.abs(opening.centerDifference)).toBeLessThan(1);
+        expect(opening.horizontalGap).toBeGreaterThan(12);
+        expect(opening.hintToControls).toBeGreaterThanOrEqual(10);
         await page.setViewportSize({ width: 390, height: 740 });
         expect(await layout(page)).toEqual(opening);
         await page.setViewportSize({ width: 390, height: 844 });
@@ -88,6 +107,10 @@ for (const mobile of [false, true]) {
       await expect(page.locator(".camera-drag-hint")).toHaveCSS("opacity", "1");
       await playUntil(page, 5.2);
       await expect(page.locator("body")).toHaveClass(/hints-dismissed/);
+      // Commit a real compositor frame: the simulated RAF used for the long
+      // gameplay run cannot itself start Chromium's native CSS transitions.
+      await page.screenshot({ animations: "allow" });
+      await page.clock.runFor(800);
       for (const selector of ["#game-tip", ".camera-drag-hint"]) {
         await expect(page.locator(selector)).toHaveCSS("opacity", "0");
         await expect(page.locator(selector)).toHaveCSS("visibility", "hidden");
@@ -107,6 +130,44 @@ for (const mobile of [false, true]) {
     });
   });
 }
+
+test.describe("large mobile controls", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+  test("corner areas respond outside the circles and release independent touches without blocking view switching", async ({ page }) => {
+    await openControlledGame(page);
+    await page.locator("#start-button").click();
+    await page.clock.runFor(100);
+    for (const id of ["touch-duck", "touch-jump"]) {
+      const bounds = await page.locator(`#${id}`).boundingBox();
+      expect(bounds.width).toBe(195);
+      expect(bounds.height).toBe(200);
+    }
+    const duck = page.locator("#touch-duck");
+    await duck.dispatchEvent("pointerdown", { pointerId: 900, button: 0, pointerType: "touch" });
+    await page.mouse.move(155, 754);
+    await page.mouse.down();
+    await page.clock.runFor(300);
+    expect(await page.evaluate(() => window.__saurian.state.duck)).toBeGreaterThan(0.9);
+    await page.mouse.up();
+    await page.clock.runFor(100);
+    await expect(duck).toHaveClass(/is-held/);
+    expect(await page.evaluate(() => window.__saurian.state.duck)).toBeGreaterThan(0.9);
+    await duck.dispatchEvent("pointercancel", { pointerId: 900 });
+    await page.clock.runFor(400);
+    expect(await page.evaluate(() => window.__saurian.state.duck)).toBeLessThan(0.05);
+    await expect(duck).not.toHaveClass(/is-held/);
+    await page.mouse.click(225, 804);
+    await page.clock.runFor(100);
+    expect(await page.evaluate(() => window.__saurian.state.y)).toBeGreaterThan(0.5);
+    await page.locator("#view-toggle").tap();
+    expect(await page.evaluate(() => window.__saurian.state.view)).toBe("first");
+    await page.locator("#pause-button").tap();
+    await page.locator("#pause-home").tap();
+    await expect(page.locator("#mobile-controls")).toBeHidden();
+    await page.locator('[data-rider="1"]').tap();
+    expect(await page.evaluate(() => window.__saurian.state.rider)).toBe(1);
+  });
+});
 
 test("Safari-compatible icons are explicit game assets at the Pages subpath", async ({ page, request }) => {
   const html = await (await request.get("/")).text();

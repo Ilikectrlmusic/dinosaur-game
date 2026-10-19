@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { contactShadowTexture } from "./surface-detail.js";
+import { ScrollingScenery } from "./scrolling-scenery.js";
 
 const groundColorURL = new URL("./assets/ground-color.webp", import.meta.url).href;
 const groundNormalURL = new URL("./assets/ground-normal.webp", import.meta.url).href;
@@ -139,14 +140,25 @@ function strataGeometry(width, height, segments = 40) {
 
 export function createBadlands(world) {
   const material = rockMaterial(world);
+  const tile = new THREE.Group();
+  // These ridges are world geometry, rather than a horizon cylinder attached
+  // to the camera. Matching endpoints let the distant ridge tiles join up.
   for (let layer = 0; layer < 2; layer++) {
-    const geometry = new THREE.CylinderGeometry(345 + layer * 65, 345 + layer * 65, 50, 100, 1, true);
-    const p = geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const angle = Math.atan2(p.getZ(i), p.getX(i));
-      p.setY(i, p.getY(i) > 0 ? 17 + Math.sin(angle * 7 + layer) * 9 + Math.sin(angle * 19) * 3 : -4);
+    const ridgeMaterial = new THREE.MeshBasicMaterial({ color: layer ? "#c2c5bd" : "#a4b0ad", side: THREE.DoubleSide });
+    for (const side of [-1, 1]) {
+      const positions = [], indices = [];
+      for (let i = 0; i <= 100; i++) {
+        const t = i / 100, angle = t * Math.PI * 2;
+        const x = side * (345 + layer * 65 + Math.sin(angle * 3) * 12);
+        const top = 24 + Math.sin(angle * 2 + layer) * 12 + Math.sin(angle * 7) * 4;
+        positions.push(x, -4, -420 + t * 420, x, top, -420 + t * 420);
+        if (i < 100) { const a = i * 2; indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setIndex(indices);
+      tile.add(new THREE.Mesh(geometry, ridgeMaterial));
     }
-    world.scene.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: layer ? "#c2c5bd" : "#a4b0ad", side: THREE.BackSide, fog: false })));
   }
   for (let i = 0; i < 18; i++) {
     const side = i % 2 ? 1 : -1;
@@ -155,7 +167,7 @@ export function createBadlands(world) {
     mesa.scale.z = rand(0.65, 1.2);
     mesa.rotation.y = rand(0, 6.3);
     mesa.receiveShadow = true;
-    world.scene.add(mesa);
+    tile.add(mesa);
   }
   // Broken spires and natural arches bring the geology into the middle distance.
   for (let i = 0; i < 8; i++) {
@@ -163,7 +175,7 @@ export function createBadlands(world) {
     const x = (i % 2 ? 1 : -1) * rand(13, 42), z = rand(-155, 15);
     spire.position.set(x, terrainHeight(x, z), z);
     spire.castShadow = spire.receiveShadow = true;
-    world.scene.add(spire);
+    tile.add(spire);
   }
   for (const [x, z] of [[-29, -67], [32, -145]]) {
     const curve = new THREE.CatmullRomCurve3([
@@ -184,8 +196,10 @@ export function createBadlands(world) {
     arch.position.set(x, terrainHeight(x, z), z);
     arch.rotation.y = x < 0 ? 0.5 : -0.45;
     arch.castShadow = arch.receiveShadow = true;
-    world.scene.add(arch);
+    tile.add(arch);
   }
+  world.badlands = new ScrollingScenery(tile);
+  world.scene.add(world.badlands);
 }
 
 function bladeGeometry(width, height, bend, sections = 5) {
@@ -313,6 +327,7 @@ export function createRockField(world) {
 }
 
 export function updateLandscape(world, time, mountHeight) {
+  world.badlands.update(world.distance);
   world.grass.position.z = world.distance % 260;
   world.grassTwin.position.z = world.grass.position.z - 260;
   world.rocks.position.z = world.distance % 260;

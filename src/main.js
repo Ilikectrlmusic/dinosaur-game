@@ -260,7 +260,7 @@ function startGame() {
     milestone: 0,
   });
   document.body.classList.add("playing");
-  document.body.classList.remove("dead");
+  document.body.classList.remove("dead", "hints-dismissed");
   $("game-hud").classList.remove("hidden");
   $("game-tip").classList.remove("hidden");
   $("mobile-controls").classList.remove("hidden");
@@ -289,7 +289,7 @@ function goHome() {
     duck: 0,
     ducking: false,
   });
-  document.body.classList.remove("playing", "dead");
+  document.body.classList.remove("playing", "dead", "hints-dismissed");
   ["game-hud", "game-tip", "mobile-controls"].forEach((id) =>
     $(id).classList.add("hidden"),
   );
@@ -406,7 +406,7 @@ function updateGameplay(dt) {
   );
   dino.root.position.set(state.x, state.y, 0);
   dino.root.rotation.z = THREE.MathUtils.damp(dino.root.rotation.z, 0, 8, dt);
-  animateDinosaur(dino, state.time, 1, state.duck, state.y);
+  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
   for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -458,7 +458,7 @@ function updateGameplay(dt) {
     audio.milestone();
     toast(`${milestone * 250} 米 · 荒野仍在延伸`);
   }
-  if (state.runTime > 13) $("game-tip").classList.add("hidden");
+  if (state.runTime >= 5) document.body.classList.add("hints-dismissed");
   updateHUD();
 }
 function updateCamera(dt) {
@@ -547,7 +547,7 @@ function frame(now) {
       remaining -= step;
     }
   } else if (state.mode === "menu") {
-    animateDinosaur(dino, state.time, 0, 0, 0);
+    animateDinosaur(dino, state.time, 0, 0, 0, dt);
   }
   if (physics) {
     crashAge += dt;

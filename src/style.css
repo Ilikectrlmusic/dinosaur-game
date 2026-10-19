@@ -522,6 +522,19 @@ h1 em {
   white-space: nowrap;
   pointer-events: none;
 }
+.camera-drag-hint,
+.game-tip {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.65s ease, visibility 0s;
+}
+.hints-dismissed .camera-drag-hint,
+.hints-dismissed .game-tip {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.65s ease, visibility 0s 0.65s;
+}
 .footer {
   height: 71px;
   position: fixed;
@@ -675,7 +688,7 @@ kbd {
 .toast {
   position: fixed;
   z-index: 10;
-  top: 114px;
+  top: 92px;
   left: 50%;
   transform: translate(-50%, -15px);
   padding: 11px 20px;
@@ -1473,13 +1486,13 @@ select {
     font-size: 23px;
   }
   .playing .view-control {
-    bottom: calc(var(--touch-bottom) + 104px);
+    bottom: calc(var(--touch-bottom) + 104px - var(--mobile-guidance-drop, 12px));
     right: 18px;
     background: #26352966;
     padding: 9px 12px;
   }
   .game-tip {
-    bottom: calc(var(--touch-bottom) + 157px);
+    bottom: calc(var(--touch-bottom) + 157px - var(--mobile-guidance-drop, 12px));
     font-size: 8px;
     gap: 7px;
     padding: 9px 12px;
@@ -1520,7 +1533,7 @@ select {
     font-size: 6px;
   }
   .toast {
-    top: 90px;
+    top: 72px;
     font-size: 10px;
   }
   .death-stats {

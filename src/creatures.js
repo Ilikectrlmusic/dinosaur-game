@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeStaticMeshes, loftGeometry, curveMesh } from "./model-detail.js";
 import { reptileSurface, fabricSurface, leatherSurface } from "./surface-detail.js";
+import { FlexibleRein } from "./flexible-rein.js";
 
 const sphere = new THREE.SphereGeometry(1, 24, 16);
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
@@ -321,6 +322,9 @@ export function buildRider(index = 0) {
       0.065,
     );
     ellipsoid(arm, darkLeather, [s * 0.05, -0.48, -0.44], [0.075, 0.075, 0.09]);
+    const hand = new THREE.Object3D();
+    hand.position.set(s * 0.05, -0.505, -0.485);
+    arm.add(hand);
     for (let finger = 0; finger < 4; finger++) segment(arm, face, [s * 0.05 + (finger - 1.5) * 0.025, -0.49, -0.48], [s * 0.05 + (finger - 1.5) * 0.025, -0.535, -0.51], 0.012);
     arm.add(curveMesh([[s * 0.07, -0.14, -0.13], [s * 0.14, -0.3, -0.16], [s * 0.075, -0.43, -0.39]], 0.004, stitch, 8));
     const leg = new THREE.Group();
@@ -353,7 +357,7 @@ export function buildRider(index = 0) {
     ).scale.y = 1.3;
     roundedPart(leg, leather, [0.14, 0.15, 0.035], [s * 0.28, -0.43, -0.318], 0.025);
     for (let j = 0; j < 4; j++) segment(leg, stitch, [s * 0.34 - 0.035, -0.78 - j * 0.04, -0.19], [s * 0.34 + 0.035, -0.795 - j * 0.04, -0.19], 0.005);
-    limbs.push({ arm, leg, side: s });
+    limbs.push({ arm, hand, leg, side: s });
   }
   // Bend the upper body around the hips, leaving the seat and stirrups planted.
   const upperBody = new THREE.Group();
@@ -554,17 +558,14 @@ export function buildDinosaur(riderIndex = 0) {
   let rider = buildRider(riderIndex);
   root.add(rider.root);
   const reins = [];
+  const reinAnchors = [];
   for (const s of [-1, 1]) {
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(s * 0.3, 3.15, -0.44),
-      new THREE.Vector3(s * 0.41, 2.89, -0.95),
-      new THREE.Vector3(s * 0.34, 2.85, -1.65),
-    ]);
-    const rein = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 16, 0.012, 5, false),
-      darkLeather,
-    );
-    rein.userData.keepSeparate = true;
+    const rein = new FlexibleRein(darkLeather, s);
+    const anchor = new THREE.Object3D();
+    anchor.position.set(s * 0.34, -0.02, -0.74);
+    head.add(anchor);
+    ring(head, steel, 0.035, 0.009, anchor.position.toArray(), [0, Math.PI / 2, 0]);
+    reinAnchors.push(anchor);
     root.add(rein);
     reins.push(rein);
   }
@@ -574,7 +575,7 @@ export function buildDinosaur(riderIndex = 0) {
     0.34,
     0.022,
     [0, -0.02, -0.74],
-    [0, Math.PI / 2, 0],
+    [0, 0, 0],
   ).scale.y = 0.65;
   mergeStaticMeshes(root);
   const home = new Map();
@@ -595,6 +596,9 @@ export function buildDinosaur(riderIndex = 0) {
     tail,
     saddle,
     reins,
+    reinAnchors,
+    reinStart: new THREE.Vector3(),
+    reinEnd: new THREE.Vector3(),
     get rider() {
       return rider;
     },
@@ -602,12 +606,13 @@ export function buildDinosaur(riderIndex = 0) {
       root.remove(rider.root);
       rider = buildRider(index);
       root.add(rider.root);
+      reins.forEach((rein) => { rein.initialized = false; });
     },
     home,
   };
 }
 
-export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0) {
+export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 / 60) {
   const stride = time * (run ? 9.8 : 1.3),
     breathing = Math.sin(time * 1.8);
   dino.body.position.y =
@@ -669,7 +674,13 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0) {
   rider.limbs.forEach(({ arm }) => {
     arm.rotation.x = duck * 1.78;
   });
-  dino.reins.forEach((r) => (r.visible = duck < 0.15));
+  dino.root.updateMatrixWorld(true);
+  dino.reins.forEach((rein, i) => {
+    dino.root.worldToLocal(rider.limbs[i].hand.getWorldPosition(dino.reinStart));
+    dino.root.worldToLocal(dino.reinAnchors[i].getWorldPosition(dino.reinEnd));
+    rein.update(dino.reinStart, dino.reinEnd, dt);
+    rein.visible = true;
+  });
 }
 
 export function buildCactus(height = 1.8) {

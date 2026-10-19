@@ -124,8 +124,11 @@ test("all riders bend at the hips without leaving the saddle or moving their leg
       "/src/creatures.js"
     );
     return [0, 1, 2].map((index) => {
-      const dino = buildDinosaur(index),
+      const dino = buildDinosaur((index + 1) % 3),
         poses = [];
+      dino.setRider(index);
+      dino.root.position.set(1, 2, -3);
+      dino.root.rotation.y = 0.3;
       for (const duck of [0, 0.25, 0.5, 0.75, 1, 0]) {
         animateDinosaur(dino, 1.2, 1, duck);
         dino.root.updateMatrixWorld(true);
@@ -142,6 +145,12 @@ test("all riders bend at the hips without leaving the saddle or moving their leg
                 arm.position.clone().set(side * 0.05, -0.48, -0.44),
               ).y,
           ),
+          reins: dino.reins.map((rein, i) => ({
+            visible: rein.visible,
+            handError: rein.points[0].distanceTo(dino.root.worldToLocal(rider.limbs[i].hand.getWorldPosition(dino.reinStart))),
+            headError: rein.points.at(-1).distanceTo(dino.root.worldToLocal(dino.reinAnchors[i].getWorldPosition(dino.reinEnd))),
+            finite: rein.geometry.attributes.position.array.every(Number.isFinite),
+          })),
           legs: rider.limbs.map(({ leg }) =>
             rider.pelvis
               .worldToLocal(leg.getWorldPosition(leg.position.clone()))
@@ -156,7 +165,13 @@ test("all riders bend at the hips without leaving the saddle or moving their leg
     for (const pose of poses) {
       for (let i = 0; i < 3; i++)
         expect(pose.seat[i]).toBeCloseTo(poses[0].seat[i], 8);
-      expect(pose.legs).toEqual(poses[0].legs);
+      pose.legs.flat().forEach((value, i) => expect(value).toBeCloseTo(poses[0].legs.flat()[i], 8));
+      for (const rein of pose.reins) {
+        expect(rein.visible).toBe(true);
+        expect(rein.handError).toBeLessThan(1e-8);
+        expect(rein.headError).toBeLessThan(1e-8);
+        expect(rein.finite).toBe(true);
+      }
     }
     expect(poses[4].headY).toBeLessThan(poses[0].headY - 1.2);
     for (const handY of poses[4].handsY)

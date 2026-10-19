@@ -45,6 +45,10 @@ npm run dev
 
 第一方鳞片、织物和皮革贴图预先生成，避免 Safari 在启动时执行大量 Canvas 像素读回。需要重新生成时，先启动开发服务器，再运行 `node scripts/generate-surfaces.mjs`（使用 Chromium）；生成源码位于 `src/procedural-surfaces.js`。
 
+山体、石柱和拱门按实际路程与赛道一起经过角色，并在远雾中循环衔接。缰绳使用端点固定的软绳模拟，随手掌和头部运动弯曲。两处开局提示在 5 秒后渐隐，重新出发时恢复。
+
+Safari、浏览器标签页与 iPhone 主屏幕图标来自同一恐龙标志；修改 `public/saurian-icon.svg` 后可运行 `node scripts/generate-icons.mjs` 重新生成 PNG 和 ICO。
+
 ## 验证
 
 ```sh
@@ -54,4 +58,4 @@ npm test
 
 默认测试使用 Chromium。读取 `CHROMIUM_PATH`，没有设置时尝试 `/usr/bin/chromium`；可安装 Playwright Chromium 后通过该变量指定路径。
 
-手机 Safari 回归使用 Playwright WebKit：安装 `npx playwright install --with-deps webkit` 后运行 `npx playwright test --project=mobile-webkit`。如需指定已有的 WebKit 启动器，可设置 `WEBKIT_PATH`。测试覆盖单赛道、镜头居中、长按与触摸取消，以及连续死亡后重开、返回营地和动画异常恢复。
+手机 Safari 回归使用 Playwright WebKit：安装 `npx playwright install --with-deps webkit` 后运行 `npx playwright test --project=mobile-webkit`。如需指定已有的 WebKit 启动器，可设置 `WEBKIT_PATH`。测试覆盖单赛道、镜头居中、长按与触摸取消、提示布局与渐隐，以及连续死亡后重开、返回营地和动画异常恢复。Node 测试还验证山体循环连续性与缰绳动态连接。

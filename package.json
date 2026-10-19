@@ -1,0 +1,26 @@
+{
+  "dependencies": {
+    "@fontsource/barlow-condensed": "5.2.6",
+    "@fontsource/inter": "5.2.8",
+    "cannon-es": "0.20.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "vite": "6.4.1"
+  },
+  "name": "saurian",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/rules.test.mjs && playwright test"
+  },
+  "description": "A cinematic 3D dinosaur riding endless runner built with Three.js and cannon-es",
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

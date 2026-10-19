@@ -1,0 +1,48 @@
+# SAURIAN — 奔向荒野
+
+使用 Three.js 制作的 3D 恐龙骑乘跑酷游戏。所有模型、沙漠纹理、肖像和音效均在本地生成，无需远程素材或 API 密钥。
+
+在线游玩：**[SAURIAN — 奔向荒野](https://ilikectrlmusic.github.io/dinosaur-game/)**
+
+## 发布
+
+推送到 `main` 后，GitHub Actions 会安装锁定版本的依赖、验证游戏规则、构建并发布到 GitHub Pages。发布流程见 `.github/workflows/pages.yml`。仓库的 Settings → Pages → Source 使用 **GitHub Actions**。
+
+Vite 构建使用相对资源路径，因此游戏可在 GitHub Pages 的仓库子路径下直接运行。
+
+## 运行
+
+需要 Node.js 20.19+（或 22.12+）。
+
+```sh
+npm ci
+npm run dev
+```
+
+开发服务器默认端口 5173。`npm run build` 生成 `dist/`，`npm run preview` 检查生产构建。
+
+## 操作
+
+| 按键           | 操作               |
+| -------------- | ------------------ |
+| Space / ↑ / W  | 跳跃               |
+| 按住 ↓ / S     | 伏低身体           |
+| A / D 或 ← / → | 在三条路线间移动   |
+| V              | 第一／第三人称视角 |
+| Esc / P        | 暂停、继续         |
+| R              | 重新出发           |
+| M              | 音效开关           |
+| F              | 全屏               |
+
+手机支持触摸操作。三位骑手外观不同；三种难度影响初速度、加速上限、障碍间隔与组合。最佳距离按难度单独保存于浏览器。
+
+碰撞后使用 cannon-es 刚体、地面接触和受限关节模拟恐龙与骑手翻滚，保留碰撞瞬间的位置和动量。音效通过 Web Audio 实时合成，需用户首次点击后才能播放。模型为程序化平滑网格，不依赖外部 3D 资产。浏览器中未启用 WebGL 时会显示恢复说明。
+
+## 验证
+
+```sh
+npm run build
+npm test
+```
+
+测试使用 Chromium。默认读取 `CHROMIUM_PATH`，没有设置时尝试 `/usr/bin/chromium`；可安装 Playwright Chromium 后通过该变量指定路径。

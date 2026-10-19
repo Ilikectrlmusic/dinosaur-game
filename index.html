@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#292b23" />
+    <meta
+      name="description"
+      content="SAURIAN — 骑上恐龙，奔向荒野。沉浸式 3D 沙漠跑酷游戏。"
+    />
+    <title>SAURIAN — 奔向荒野</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <div id="scene" aria-label="3D 沙漠游戏场景"></div>
+    <div class="vignette"></div>
+    <header class="header" id="header">
+      <a class="brand" href="./" aria-label="Saurian 首页">
+        <svg class="brand-mark" viewBox="0 0 44 44" fill="none">
+          <path
+            d="M6 30V17l8-6 6 2 7-5 11 3v8l-7 1-5 9-3 8h-5l1-9-5-3-3 7H6Z"
+            fill="currentColor"
+          />
+          <path d="m27 14 7 1M14 18l8 3" stroke="#30322a" stroke-width="2" />
+          <circle cx="32" cy="13" r="1.1" fill="#30322a" />
+        </svg>
+        <span>SAURIAN<span class="brand-sub">A RIDE BEYOND TIME</span></span>
+      </a>
+      <nav class="navigation" aria-label="主导航">
+        <button class="nav-button active" id="nav-play">
+          探索荒野<span>PLAY</span></button
+        ><button class="nav-button" id="nav-guide">
+          生存指南<span>FIELD GUIDE</span></button
+        ><button class="nav-button" id="nav-settings">
+          偏好设置<span>SETTINGS</span>
+        </button>
+      </nav>
+      <div class="header-tools">
+        <span class="live-label"><i></i> WORLD IS ALIVE</span
+        ><button
+          class="icon-button"
+          id="sound-toggle"
+          aria-label="关闭音效"
+          title="音效 M"
+        >
+          <svg viewBox="0 0 24 24">
+            <path
+              d="m11 5-5 4H3v6h3l5 4V5ZM15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14"
+            />
+          </svg></button
+        ><button
+          class="icon-button"
+          id="fullscreen-toggle"
+          aria-label="全屏"
+          title="全屏 F"
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />
+          </svg>
+        </button>
+      </div>
+    </header>
+    <main id="menu" class="menu">
+      <div class="intro">
+        <div class="eyebrow">
+          <span class="small-line"></span> NO ROADS. NO RULES. JUST INSTINCT.
+        </div>
+        <h1>A WILDER<br />KIND OF <em>RUN.</em></h1>
+        <p class="intro-text">
+          亿万年前的荒野，现在由你驰骋。<br />骑上恐龙，越过险境，别让本能停下来。
+        </p>
+      </div>
+      <section class="expedition" aria-label="出发设置">
+        <div class="section-label">
+          <span>01 <b>选择你的骑手</b></span
+          ><span class="muted">CHOOSE YOUR RIDER</span>
+        </div>
+        <div class="rider-options" id="rider-options">
+          <button
+            class="rider-card selected"
+            data-rider="0"
+            aria-pressed="true"
+          >
+            <span class="portrait portrait-0"></span
+            ><span class="rider-info"
+              ><strong>艾拉</strong><small>THE EXPLORER</small></span
+            ><span class="radio-dot"></span>
+          </button>
+          <button class="rider-card" data-rider="1" aria-pressed="false">
+            <span class="portrait portrait-1"></span
+            ><span class="rider-info"
+              ><strong>凯</strong><small>THE RANGER</small></span
+            ><span class="radio-dot"></span>
+          </button>
+          <button class="rider-card" data-rider="2" aria-pressed="false">
+            <span class="portrait portrait-2"></span
+            ><span class="rider-info"
+              ><strong>诺瓦</strong><small>THE NOMAD</small></span
+            ><span class="radio-dot"></span>
+          </button>
+        </div>
+        <div class="section-label difficulty-label">
+          <span>02 <b>荒野难度</b></span
+          ><span class="muted" id="difficulty-description"
+            >放慢脚步，感受旷野</span
+          >
+        </div>
+        <div class="difficulty-options" role="group" aria-label="难度">
+          <button
+            class="difficulty selected"
+            data-difficulty="easy"
+            aria-pressed="true"
+          >
+            <span class="difficulty-bars">▂</span> 悠然
+            <small>EXPLORER</small></button
+          ><button
+            class="difficulty"
+            data-difficulty="normal"
+            aria-pressed="false"
+          >
+            <span class="difficulty-bars">▂▅</span> 冒险
+            <small>ADVENTURER</small></button
+          ><button
+            class="difficulty"
+            data-difficulty="hard"
+            aria-pressed="false"
+          >
+            <span class="difficulty-bars">▂▅█</span> 极限
+            <small>SURVIVOR</small>
+          </button>
+        </div>
+        <button class="start-button" id="start-button">
+          <span>进入荒野 <small>LET’S RIDE</small></span
+          ><svg viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+        </button>
+        <div class="start-note">
+          <span class="status-dot"></span>无需下载 · 戴上耳机，沉浸其中<span
+            class="version"
+            >VOL. 01</span
+          >
+        </div>
+      </section>
+    </main>
+    <aside class="world-label" id="world-label">
+      <span class="world-number">REGION 001</span
+      ><span class="world-line"></span><strong>THE BADLANDS</strong
+      ><span>遗忘之境 · 史前荒漠</span>
+      <div class="weather">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"
+          />
+        </svg>
+        32° <i> / </i> GOLDEN HOUR
+      </div>
+    </aside>
+    <div class="view-control" id="view-control">
+      <span class="view-icon">◉</span
+      ><button id="view-toggle" aria-label="切换视角">
+        第三人称 <span>THIRD PERSON</span></button
+      ><kbd>V</kbd>
+    </div>
+    <footer class="footer" id="footer">
+      <div class="controls-hint">
+        <span><kbd>SPACE</kbd> 跳跃</span><span><kbd>↓</kbd> 低头躲避</span
+        ><span><kbd>A</kbd><kbd>D</kbd> 左右移动</span
+        ><span><kbd>V</kbd> 切换视角</span>
+      </div>
+      <span class="footer-tag"
+        >LEAVE NOTHING BUT FOOTPRINTS.
+        <svg viewBox="0 0 16 16"><path d="m2 12 6-8 6 8H2Z" /></svg
+      ></span>
+    </footer>
+    <div class="game-hud hidden" id="game-hud">
+      <div class="hud-distance">
+        <span>DISTANCE / 已行进</span
+        ><strong id="distance">00000<small> M</small></strong>
+      </div>
+      <div class="hud-best">
+        <span>PERSONAL BEST</span
+        ><strong id="best">00000 <small>M</small></strong>
+      </div>
+      <div class="hud-right">
+        <span id="hud-difficulty">EXPLORER</span
+        ><span class="hud-speed"><b id="speed">36</b> KM/H</span
+        ><button class="icon-button" id="pause-button" aria-label="暂停游戏">
+          <svg viewBox="0 0 24 24">
+            <path d="M8 5v14M16 5v14" stroke-width="3" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="game-tip hidden" id="game-tip">
+      <kbd>SPACE</kbd><span>跳过仙人掌</span><i></i><kbd>↓</kbd
+      ><span>低头躲避翼龙</span>
+    </div>
+    <div class="mobile-controls hidden" id="mobile-controls">
+      <button id="touch-left" aria-label="向左">←</button
+      ><button id="touch-right" aria-label="向右">→</button
+      ><button id="touch-duck" aria-label="低头">↓</button
+      ><button id="touch-jump" aria-label="跳跃">↑</button>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+    <dialog id="guide-dialog" class="modal">
+      <button class="modal-close" aria-label="关闭">×</button
+      ><span class="eyebrow">THE FIELD GUIDE</span>
+      <h2>荒野生存指南</h2>
+      <p class="modal-intro">
+        你的旅伴是一头迅猛的异特龙。相信它的脚步，也相信你的反应。
+      </p>
+      <div class="guide-grid">
+        <div>
+          <span class="guide-number">01</span>
+          <h3>跨越荆棘</h3>
+          <p>
+            按 <kbd>SPACE</kbd> 或
+            <kbd>↑</kbd> 跳跃。接近仙人掌时起跳；腾空后无法再次跳跃。
+          </p>
+        </div>
+        <div>
+          <span class="guide-number">02</span>
+          <h3>留意天空</h3>
+          <p>
+            按住 <kbd>↓</kbd> 或
+            <kbd>S</kbd> 伏低身体，从低空翼龙下穿过。也可以左右换道绕开。
+          </p>
+        </div>
+        <div>
+          <span class="guide-number">03</span>
+          <h3>找到你的路</h3>
+          <p>
+            <kbd>A</kbd> / <kbd>D</kbd> 或方向键切换三条路线。按
+            <kbd>V</kbd> 自由切换第一、第三人称。
+          </p>
+        </div>
+        <div>
+          <span class="guide-number">04</span>
+          <h3>保持本能</h3>
+          <p>
+            速度会逐渐提升。撞上障碍将结束旅程。<kbd>ESC</kbd> 暂停，<kbd
+              >R</kbd
+            >
+            重新出发。
+          </p>
+        </div>
+      </div>
+      <p class="guide-footnote">
+        手机可使用屏幕下方按钮。碰撞使用刚体与关节物理；音效由浏览器实时合成。
+      </p>
+      <button class="secondary-button modal-close-action">
+        记住了，出发吧 ↗
+      </button>
+    </dialog>
+    <dialog id="settings-dialog" class="modal settings-modal">
+      <button class="modal-close" aria-label="关闭">×</button
+      ><span class="eyebrow">MAKE IT YOURS</span>
+      <h2>按你的节奏</h2>
+      <label class="setting-row"
+        ><span><b>环境音效</b><small>风声、脚步与恐龙的低鸣</small></span
+        ><input id="audio-setting" type="checkbox" checked /><span
+          class="switch"
+        ></span></label
+      ><label class="setting-row"
+        ><span><b>音量</b><small>适合戴上耳机的音量</small></span
+        ><input
+          id="volume-setting"
+          type="range"
+          min="0"
+          max="100"
+          value="55"
+          aria-label="音量" /></label
+      ><label class="setting-row"
+        ><span
+          ><b>画面品质</b><small>高画质启用柔和阴影与更丰富的细节</small></span
+        ><select id="quality-setting">
+          <option value="high">高画质</option>
+          <option value="low">流畅</option>
+        </select></label
+      ><label class="setting-row"
+        ><span><b>动态镜头</b><small>奔跑时的轻微镜头起伏</small></span
+        ><input id="motion-setting" type="checkbox" checked /><span
+          class="switch"
+        ></span></label
+      ><button class="secondary-button modal-close-action">
+        保存并返回 ↗
+      </button>
+    </dialog>
+    <dialog id="pause-dialog" class="modal compact-modal">
+      <span class="eyebrow">TAKE A BREATH</span>
+      <h2>荒野在等你。</h2>
+      <p>歇一歇，前路还很长。</p>
+      <button class="start-button" id="resume-button">
+        继续旅程 <span>→</span></button
+      ><button class="text-button" id="pause-home">返回营地</button>
+    </dialog>
+    <dialog id="death-dialog" class="modal death-modal">
+      <span class="eyebrow">THE WILD ALWAYS WINS. UNTIL NEXT TIME.</span>
+      <h2>旅程暂告一段落。</h2>
+      <p id="death-reason">荒野给你上了一课。</p>
+      <div class="death-stats">
+        <div>
+          <span>本次距离</span
+          ><strong id="final-distance">0<small> M</small></strong>
+        </div>
+        <div>
+          <span>个人最佳 <b id="new-best" class="hidden">NEW BEST</b></span
+          ><strong id="final-best">0<small> M</small></strong>
+        </div>
+      </div>
+      <button class="start-button" id="retry-button">
+        再赴荒野 <span>↗</span></button
+      ><button class="text-button" id="death-home">返回营地，换一位骑手</button
+      ><span class="death-shortcut"><kbd>R</kbd> 快速重新开始</span>
+    </dialog>
+    <div id="loading" class="loading">
+      <div class="loading-logo">SAURIAN<span>PREPARING THE WILD</span></div>
+      <div class="loading-track"><i></i></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

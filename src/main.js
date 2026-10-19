@@ -18,6 +18,7 @@ import {
 import { GameAudio } from "./audio.js";
 import { CrashPhysics } from "./physics.js";
 import { JUMP_VELOCITY, advanceJump, overlapsRunner } from "./rules.js";
+import { DragLook } from "./drag-look.js";
 
 const $ = (id) => document.getElementById(id);
 const CONFIG = {
@@ -79,6 +80,7 @@ audio.setVolume(state.volume);
 let renderer,
   world,
   camera,
+  dragLook,
   dino,
   physics = null,
   obstacles = [],
@@ -90,7 +92,15 @@ let renderer,
 const targetCamera = new THREE.Vector3(),
   targetLook = new THREE.Vector3(),
   cameraLook = new THREE.Vector3(-3, 1.9, 1.5),
-  headPos = new THREE.Vector3();
+  headPos = new THREE.Vector3(),
+  orbitPivot = new THREE.Vector3(),
+  orbitOffset = new THREE.Vector3(),
+  orbitSpherical = new THREE.Spherical(),
+  upAxis = new THREE.Vector3(0, 1, 0),
+  pitchAxis = new THREE.Vector3(),
+  yawRotation = new THREE.Quaternion(),
+  pitchRotation = new THREE.Quaternion(),
+  lookEuler = new THREE.Euler(0, 0, 0, "YXZ");
 let previousStep = 0;
 function releaseModel(root) {
   const geometries = new Set(),
@@ -173,6 +183,7 @@ function resetDino() {
   dino.root.position.set(0, 0, 0);
 }
 function toggleView() {
+  dragLook.reset();
   state.view = state.view === "third" ? "first" : "third";
   updateSelection();
   persist();
@@ -197,6 +208,7 @@ function setSound(enabled) {
 function pause() {
   if (state.mode !== "running") return;
   state.mode = "paused";
+  dragLook.cancel();
   audio.update(0, 0, false, false);
   $("pause-dialog").showModal();
 }
@@ -208,6 +220,7 @@ function resume() {
   lastFrame = performance.now();
 }
 function closeDialogs() {
+  dragLook.cancel();
   document.querySelectorAll("dialog[open]").forEach((d) => d.close());
 }
 function clearObstacles() {
@@ -217,6 +230,7 @@ function clearObstacles() {
 function startGame() {
   clearTimeout(deathTimeout);
   closeDialogs();
+  dragLook.reset();
   audio.init();
   audio.roar(0.12);
   resetDino();
@@ -251,6 +265,7 @@ function startGame() {
 function goHome() {
   clearTimeout(deathTimeout);
   closeDialogs();
+  dragLook.reset();
   clearObstacles();
   resetDino();
   Object.assign(state, {
@@ -326,6 +341,7 @@ function updateHUD() {
 function crash(obstacle) {
   if (state.mode !== "running") return;
   state.mode = "crashed";
+  dragLook.cancel();
   crashAge = 0;
   audio.hit();
   document.body.classList.add("dead");
@@ -362,7 +378,9 @@ function crash(obstacle) {
       : "没能越过这片荆棘。下次提前起跳，或从两侧绕过去。";
   deathTimeout = setTimeout(() => {
     if (state.mode === "crashed") {
+      dragLook.cancel();
       state.mode = "dead";
+      audio.update(0, 0, false, false);
       $("death-dialog").showModal();
     }
   }, 2700);
@@ -467,10 +485,11 @@ function updateCamera(dt) {
     targetCamera.set(p.x + 7, Math.max(3.4, p.y + 2.5), p.z + 9);
   } else if (state.view === "first") {
     dino.rider.root.visible = false;
-    const y = 3.96 + state.y - state.duck * 1.44;
+    dino.rider.head.getWorldPosition(headPos);
+    const y = headPos.y + 0.03;
     const bob =
       state.motion && state.y < 0.1 ? Math.sin(state.time * 19.6) * 0.035 : 0;
-    targetCamera.set(state.x, y + bob, -0.55 - state.duck * 0.65);
+    targetCamera.set(headPos.x, y + bob, headPos.z - 0.25);
     targetLook.set(state.x, y - 0.18, -36);
   } else {
     dino.rider.root.visible = true;
@@ -482,6 +501,27 @@ function updateCamera(dt) {
       9.8,
     );
     targetLook.set(state.x * 0.8, 1.95 + state.y * 0.35, -5.5);
+  }
+  if (state.view === "first" && state.mode !== "menu" && !physics) {
+    // The eye stays on the rider; dragging changes the direction of the gaze.
+    lookEuler.set(-dragLook.pitch, dragLook.yaw, 0, "YXZ");
+    orbitOffset.subVectors(targetLook, targetCamera).applyEuler(lookEuler);
+    targetLook.copy(targetCamera).add(orbitOffset);
+  } else {
+    // Rotate the position and aim together around the mount, preserving framing.
+    if (physics) orbitPivot.copy(physics.centerBody.position);
+    else orbitPivot.set(state.x, 2.2 + state.y * 0.4, 0);
+    orbitOffset.subVectors(targetCamera, orbitPivot);
+    orbitSpherical.setFromVector3(orbitOffset);
+    const angle = orbitSpherical.theta + dragLook.yaw;
+    const pitch =
+      THREE.MathUtils.clamp(orbitSpherical.phi - dragLook.pitch, 0.18, 1.45) -
+      orbitSpherical.phi;
+    yawRotation.setFromAxisAngle(upAxis, dragLook.yaw);
+    pitchAxis.set(Math.cos(angle), 0, -Math.sin(angle));
+    pitchRotation.setFromAxisAngle(pitchAxis, pitch).multiply(yawRotation);
+    targetCamera.sub(orbitPivot).applyQuaternion(pitchRotation).add(orbitPivot);
+    targetLook.sub(orbitPivot).applyQuaternion(pitchRotation).add(orbitPivot);
   }
   camera.position.lerp(
     targetCamera,
@@ -498,8 +538,9 @@ function frame(now) {
   raf = requestAnimationFrame(frame);
   const dt = Math.min((now - lastFrame) / 1000 || 0.016, 0.25);
   lastFrame = now;
-  if (state.mode === "paused") {
-    renderer.render(world.scene, camera);
+  if (state.mode === "paused" || state.mode === "dead") {
+    // Leave the last 3D frame behind the modal. No physics or GPU work competes
+    // with the dialog's pointer events while the player chooses the next action.
     return;
   }
   state.time += dt;
@@ -564,10 +605,12 @@ function bindUI() {
     audio.click();
   });
   $("nav-guide").addEventListener("click", () => {
+    dragLook.cancel();
     $("guide-dialog").showModal();
     audio.click();
   });
   $("nav-settings").addEventListener("click", () => {
+    dragLook.cancel();
     $("settings-dialog").showModal();
     audio.click();
   });
@@ -638,6 +681,8 @@ function bindUI() {
     else if (key === "m") setSound(!state.sound);
     else if (key === "f") $("fullscreen-toggle").click();
     else if (key === "escape" || key === "p") {
+      // Do not let the same Escape press immediately dismiss the new dialog.
+      e.preventDefault();
       if (state.mode === "running") pause();
       else if (state.mode === "paused") resume();
     } else if (
@@ -655,6 +700,7 @@ function bindUI() {
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      dragLook.cancel();
       state.ducking = false;
       pause();
     }
@@ -702,6 +748,12 @@ function init() {
     renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     $("scene").appendChild(renderer.domElement);
+    dragLook = new DragLook(renderer.domElement, {
+      canDrag: () =>
+        ["menu", "running", "crashed"].includes(state.mode) &&
+        !document.querySelector("dialog[open]"),
+      onReset: () => toast("视角已回正"),
+    });
     camera = new THREE.PerspectiveCamera(
       innerWidth < 700 ? 53 : 45,
       innerWidth / innerHeight,
@@ -724,6 +776,8 @@ function init() {
       camera.fov = innerWidth < 700 ? 53 : 45;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
+      if (["paused", "dead"].includes(state.mode))
+        renderer.render(world.scene, camera);
     });
     lastFrame = performance.now();
     requestAnimationFrame(frame);

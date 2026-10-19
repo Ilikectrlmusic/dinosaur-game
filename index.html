@@ -163,6 +163,7 @@
       ><button id="view-toggle" aria-label="切换视角">
         第三人称 <span>THIRD PERSON</span></button
       ><kbd>V</kbd>
+      <span class="camera-drag-hint">拖动画面环顾 · 双击回正</span>
     </div>
     <footer class="footer" id="footer">
       <div class="controls-hint">
@@ -295,7 +296,9 @@
       <p>歇一歇，前路还很长。</p>
       <button class="start-button" id="resume-button">
         继续旅程 <span>→</span></button
-      ><button class="text-button" id="pause-home">返回营地</button>
+      ><button type="button" class="camp-button" id="pause-home">
+        返回营地 <span aria-hidden="true">↶</span>
+      </button>
     </dialog>
     <dialog id="death-dialog" class="modal death-modal">
       <span class="eyebrow">THE WILD ALWAYS WINS. UNTIL NEXT TIME.</span>
@@ -311,9 +314,10 @@
           ><strong id="final-best">0<small> M</small></strong>
         </div>
       </div>
-      <button class="start-button" id="retry-button">
+      <button type="button" class="start-button" id="retry-button" autofocus>
         再赴荒野 <span>↗</span></button
-      ><button class="text-button" id="death-home">返回营地，换一位骑手</button
+      ><button type="button" class="camp-button" id="death-home">
+        返回营地，换一位骑手 <span aria-hidden="true">↶</span></button
       ><span class="death-shortcut"><kbd>R</kbd> 快速重新开始</span>
     </dialog>
     <div id="loading" class="loading">

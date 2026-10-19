@@ -62,6 +62,11 @@ button:disabled {
   width: 100%;
   height: 100%;
   outline: none;
+  cursor: grab;
+  touch-action: none;
+}
+#scene canvas.is-dragging {
+  cursor: grabbing;
 }
 .vignette {
   position: fixed;
@@ -500,6 +505,16 @@ h1 em {
 .view-control kbd {
   margin-left: 12px;
 }
+.camera-drag-hint {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 7px;
+  color: #e8e1ccbb;
+  font-size: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .footer {
   height: 71px;
   position: fixed;
@@ -679,7 +694,8 @@ dialog {
   border: 1px solid #eee8ce33;
   box-shadow: 0 25px 100px #101c1c66;
   padding: 45px;
-  backdrop-filter: blur(30px);
+  isolation: isolate;
+  pointer-events: auto;
   max-height: 90vh;
   overflow-y: auto;
 }
@@ -832,6 +848,28 @@ select {
   width: 100%;
 }
 .text-button:hover {
+  color: var(--orange);
+}
+.camp-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 50px;
+  margin: 12px 0;
+  padding: 14px 20px;
+  border: 1px solid #f3eddf66;
+  background: #f3eddf0a;
+  color: var(--cream);
+  font-size: 12px;
+  touch-action: manipulation;
+}
+.camp-button:hover {
+  border-color: var(--orange);
+  background: #ee95641a;
+}
+.camp-button span {
+  font-size: 20px;
   color: var(--orange);
 }
 .death-modal {

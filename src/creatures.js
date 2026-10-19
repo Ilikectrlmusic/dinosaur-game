@@ -335,7 +335,14 @@ export function buildRider(index = 0) {
     ).scale.y = 1.3;
     limbs.push({ arm, leg, side: s });
   }
-  return { root, torso, head, pelvis, limbs, backpack, index };
+  // Bend the upper body around the hips, leaving the seat and stirrups planted.
+  const upperBody = new THREE.Group();
+  upperBody.position.copy(pelvis.position);
+  root.add(upperBody);
+  upperBody.attach(torso);
+  upperBody.attach(head);
+  limbs.forEach(({ arm }) => upperBody.attach(arm));
+  return { root, upperBody, torso, head, pelvis, limbs, backpack, index };
 }
 
 export function buildDinosaur(riderIndex = 0) {
@@ -634,13 +641,15 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0) {
   dino.saddle.position.y = 2.61 + (dino.body.position.y - 1.97);
   const rider = dino.rider;
   rider.root.position.y = dino.body.position.y - 1.97;
-  rider.root.rotation.x =
-    -duck * 0.64 + (run ? Math.sin(stride * 2) * 0.025 : 0);
-  rider.root.position.z = -duck * 1.42;
+  rider.root.rotation.x = 0;
+  rider.root.position.z = 0;
+  rider.upperBody.rotation.x =
+    -duck * 1.24 + (run ? Math.sin(stride * 2) * 0.025 : 0);
+  rider.head.rotation.x = duck * 0.8;
   rider.head.rotation.y = Math.sin(time * 0.55) * 0.06;
-  rider.torso.rotation.x = -0.1 - duck * 0.12;
+  rider.torso.rotation.x = -0.1;
   rider.limbs.forEach(({ arm }) => {
-    arm.rotation.x = -duck * 0.1;
+    arm.rotation.x = duck * 1.78;
   });
   dino.reins.forEach((r) => (r.visible = duck < 0.15));
 }

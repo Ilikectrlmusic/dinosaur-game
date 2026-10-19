@@ -134,8 +134,8 @@ test("all staggered cactus patterns remain jumpable at every unlocked speed and 
         assert.ok(allowed.at(-1) - allowed[0] >= 0.17, `${difficulty} at ${speed}: leave a usable timing window`);
         assert.ok(allowed.length <= single.length, "the tall cactus must still constrain the timing within the group");
         for (const dt of [1 / 30, 1 / 60, 1 / 120]) assert.ok(clears(0.42, triple, dt));
-        assert.equal(clears(0.15, triple), false, "jumping too late must hit the first cactus");
-        assert.equal(clears(0.8, triple), false, "landing in the group must hit a trailing cactus");
+        assert.equal(clears(0.05, triple), false, "jumping at the first cactus must still be too late");
+        assert.equal(clears(0.9, triple), false, "landing in the group must hit a trailing cactus");
         if (speed === config.maxSpeed) break;
       }
     }
@@ -199,4 +199,14 @@ test("collisions respect the obstacle footprint and exclude distant objects", ()
     assert.equal(overlapsRunner(runner, { ...cactus, z }), false);
   assert.equal(overlapsRunner({ ...runner, x: 0.7 }, cactus), true);
   assert.equal(overlapsRunner({ ...runner, x: 1.5 }, cactus), false);
+});
+
+test("cactus tips and individual arms respect visible clearance instead of a full-height box", () => {
+  const box = (x, y, z, radius = 0.03) => ({ min: { x: x - radius, y: y - radius, z: z - radius }, max: { x: x + radius, y: y + radius, z: z + radius } });
+  const contact = (bounds) => overlapsRunner({ ...runner, cactusBounds: [bounds] }, { ...cactus, height: 1.55 });
+  assert.equal(contact(box(0, 1.6, 0)), false, "clear above the visible tip");
+  assert.equal(contact(box(0, 1.48, 0)), true, "touching the trunk is lethal");
+  assert.equal(contact(box(0.5, 1.53, 0)), false, "empty space over the shorter side arm is safe");
+  assert.equal(contact(box(0.5, 1.38, 0)), true, "touching the actual side arm is lethal");
+  assert.equal(contact(box(0.17, 1.53, 0)), false, "rounded cap does not occupy its outer bounding corner");
 });

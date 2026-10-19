@@ -32,10 +32,14 @@ export class GameAudio {
     return !!ready;
   }
   initialize() {
+    // Safari's ambient session can be muted by the iPhone ring/silent switch.
+    try {
+      if (this.enabled && navigator.audioSession) navigator.audioSession.type = "playback";
+    } catch { /* Older Safari uses the media unlock below. */ }
+    this.unlockMediaSession();
     if (this.context?.state === "closed") this.context = null;
     if (this.context) {
-      if (this.context.state !== "running")
-        this.context.resume().catch((error) => this.report(error));
+      this.wake();
       return true;
     }
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -66,10 +70,44 @@ export class GameAudio {
     this.windGain.gain.value = 0.09;
     this.wind.connect(filter).connect(this.windGain).connect(this.master);
     this.wind.start();
+    this.wake();
     return true;
+  }
+  wake() {
+    if (!this.context || this.context.state === "running") return;
+    // Start a silent frame and resume within the completed touch/click gesture.
+    // Repeat on later gestures to recover Safari's interrupted context too.
+    const frame = this.context.createBufferSource();
+    frame.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
+    frame.connect(this.master);
+    frame.start(0);
+    this.context.resume().catch((error) => this.report(error));
+  }
+  unlockMediaSession() {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (!this.enabled || !ios || navigator.audioSession) return;
+    if (!this.mediaPlayback) {
+      // A silent PCM loop selects the playback route in older iOS versions.
+      const wav = new ArrayBuffer(4044), view = new DataView(wav);
+      const label = (offset, value) => [...value].forEach((character, i) => view.setUint8(offset + i, character.charCodeAt(0)));
+      label(0, "RIFF"); view.setUint32(4, 4036, true); label(8, "WAVE");
+      label(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true); view.setUint32(24, 8000, true); view.setUint32(28, 16000, true);
+      view.setUint16(32, 2, true); view.setUint16(34, 16, true); label(36, "data"); view.setUint32(40, 4000, true);
+      this.mediaPlayback = new Audio(URL.createObjectURL(new Blob([wav], { type: "audio/wav" })));
+      this.mediaPlayback.loop = true;
+      this.mediaPlayback.setAttribute("playsinline", "");
+    }
+    if (this.mediaPlayback.paused) this.mediaPlayback.play().catch(() => {});
+  }
+  suspend() {
+    this.mediaPlayback?.pause();
+    if (this.context?.state === "running")
+      this.attempt(() => this.context.suspend().catch((error) => this.report(error)));
   }
   setEnabled(value) {
     this.enabled = value;
+    if (!value) this.mediaPlayback?.pause();
     this.applyVolume();
   }
   setVolume(value) {

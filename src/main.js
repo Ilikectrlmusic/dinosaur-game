@@ -13,6 +13,7 @@ import {
   animateDinosaur,
   buildCactus,
   buildCactusCluster,
+  cactusContactBounds,
   buildPterosaur,
   makePortrait,
 } from "./creatures.js";
@@ -429,6 +430,9 @@ function updateGameplay(dt) {
   fire.update(dt, dino.head, state.speed);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
+  const runner = { x: state.x, y: state.y, duck: state.duck };
+  if (obstacles.some((obstacle) => obstacle.userData.type === "cactus" && obstacle.position.z > -4 && obstacle.position.z < 4 + (obstacle.userData.depth || 0)))
+    runner.cactusBounds = cactusContactBounds(dino);
   for (let i = obstacles.length - 1; i >= 0; i--) {
     const obstacle = obstacles[i],
       bird = obstacle.userData.type === "bird";
@@ -451,7 +455,7 @@ function updateGameplay(dt) {
     const dx = Math.abs(obstacle.position.x - state.x),
       z = obstacle.position.z;
     if (
-      overlapsRunner(state, {
+      overlapsRunner(runner, {
         type: obstacle.userData.type,
         x: obstacle.position.x,
         y: obstacle.position.y,
@@ -730,6 +734,7 @@ function bindUI() {
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      audio.suspend();
       resetInputs();
       if (state.mode === "crashed") finishCrash(roundGeneration);
       else pause();
@@ -741,8 +746,14 @@ function bindUI() {
     onDuck: (held) => {
       state.ducking = held;
     },
+    onLookStart: (event) => dragLook.begin(event, false),
+    onLookMove: (event) => dragLook.move(event),
+    onLookEnd: () => dragLook.cancel(),
   });
-  document.addEventListener("pointerdown", () => audio.init(), { once: true });
+  // iOS unlocks audio on completed touch/click gestures; pointerdown alone
+  // cannot reliably resume a suspended or interrupted Safari AudioContext.
+  for (const type of ["touchend", "click", "keydown"])
+    document.addEventListener(type, () => audio.init(), { capture: true, passive: true });
 }
 function applyQuality() {
   renderer.setPixelRatio(

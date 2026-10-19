@@ -578,6 +578,9 @@ export function buildDinosaur(riderIndex = 0) {
     [0, 0, 0],
   ).scale.y = 0.65;
   mergeStaticMeshes(root);
+  const cactusContacts = [body, ...legs.flatMap(({ hip, shin, foot }) => [hip, shin, foot])]
+    .flatMap((part) => part.children.filter((child) => child.isMesh))
+    .map((mesh) => ({ mesh, bounds: new THREE.Box3() }));
   const home = new Map();
   root.traverse((o) => {
     if (o.isGroup)
@@ -609,7 +612,13 @@ export function buildDinosaur(riderIndex = 0) {
       reins.forEach((rein) => { rein.initialized = false; });
     },
     home,
+    cactusContacts,
   };
+}
+
+export function cactusContactBounds(dino) {
+  dino.root.updateMatrixWorld(true);
+  return dino.cactusContacts.map(({ mesh, bounds }) => bounds.setFromObject(mesh, true));
 }
 
 export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 / 60, fire = 0) {

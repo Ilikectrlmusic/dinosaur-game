@@ -14,17 +14,19 @@ try {
     const image = new Image();
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
     await image.decode();
-    return [16, 32, 48, 180].map((size) => {
+    return [16, 32, 48, 180, 192, 512].map((size) => {
       const canvas = document.createElement("canvas");
       canvas.width = canvas.height = size;
       const context = canvas.getContext("2d");
-      if (size === 180) { context.fillStyle = "#e5814a"; context.fillRect(0, 0, size, size); }
+      if (size >= 180) { context.fillStyle = "#e5814a"; context.fillRect(0, 0, size, size); }
       context.drawImage(image, 0, 0, size, size);
       return { size, png: canvas.toDataURL("image/png").split(",")[1], rgba: [...context.getImageData(0, 0, size, size).data] };
     });
   }, svg);
   await writeFile(new URL("saurian-icon-32.png", root), Buffer.from(icons[1].png, "base64"));
   await writeFile(new URL("saurian-apple-touch-icon.png", root), Buffer.from(icons[3].png, "base64"));
+  for (const { size, png } of icons.filter(({ size }) => [32, 180, 192, 512].includes(size)))
+    await writeFile(new URL(size === 180 ? "saurian-touch-v2-180.png" : `saurian-icon-v2-${size}.png`, root), Buffer.from(png, "base64"));
 
   // Classic 32-bit DIB entries also work in browsers that cannot read SVG/PNG
   // favicons. Include the alpha mask and all common tab icon sizes.
@@ -54,6 +56,7 @@ try {
     offset += bitmap.length;
   });
   await writeFile(new URL("saurian-favicon.ico", root), Buffer.concat([header, ...entries.map(({ bitmap }) => bitmap)]));
+  await writeFile(new URL("saurian-icon-v2.ico", root), Buffer.concat([header, ...entries.map(({ bitmap }) => bitmap)]));
 } finally {
   await browser.close();
 }

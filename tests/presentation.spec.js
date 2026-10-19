@@ -222,12 +222,18 @@ test.describe("large mobile controls", () => {
 test("Safari-compatible icons are explicit game assets at the Pages subpath", async ({ page, request }) => {
   const html = await (await request.get("/")).text();
   expect(html).toContain('name="apple-mobile-web-app-title" content="SAURIAN"');
-  expect(html).toContain('rel="apple-touch-icon" sizes="180x180" href="./saurian-apple-touch-icon.png"');
-  const ico = await request.get("/saurian-favicon.ico");
+  expect(html).toContain('rel="apple-touch-icon" sizes="180x180" href="./saurian-touch-v2-180.png"');
+  expect(html).toContain('rel="apple-touch-icon-precomposed"');
+  expect(html).toContain('rel="manifest" href="./saurian.webmanifest"');
+  expect(html).not.toContain('type="image/svg+xml"');
+  const ico = await request.get("/saurian-icon-v2.ico");
   expect(ico.ok()).toBe(true);
   expect([...(await ico.body()).subarray(0, 6)]).toEqual([0, 0, 1, 0, 3, 0]);
   await page.goto("/saurian-icon.svg");
-  for (const [name, size] of [["saurian-icon-32.png", 32], ["saurian-apple-touch-icon.png", 180]]) {
+  const manifest = await (await request.get("/saurian.webmanifest")).json();
+  expect(manifest.name).toContain("SAURIAN");
+  expect(manifest.start_url).toBe("./");
+  for (const [name, size] of [["saurian-icon-v2-32.png", 32], ["saurian-touch-v2-180.png", 180], ["saurian-icon-v2-192.png", 192], ["saurian-icon-v2-512.png", 512]]) {
     const dimensions = await page.evaluate(async (path) => {
       const image = new Image();
       image.src = path;

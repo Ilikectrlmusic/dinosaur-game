@@ -95,7 +95,28 @@ export function overlapsRunner(runner, obstacle) {
   return runner.y + 4.22 - runner.duck * 1.57 > obstacle.y - 0.25 && runner.y + 0.4 < obstacle.y + 0.24;
 }
 function overlapsCactus(runner, x, z, height) {
-  return Math.abs(x - runner.x) < 1.05 && z > -1.25 && z < 0.85 && runner.y + 0.15 < height;
+  // Runtime bounds follow the rendered feet, calves, thighs and belly. The
+  // reference envelope also lets rule simulations check a conservative jump.
+  const bounds = runner.cactusBounds || [{
+    min: { x: runner.x - 0.75, y: runner.y + 0.35, z: -0.55 },
+    max: { x: runner.x + 0.75, y: runner.y + 2.6, z: 0.45 },
+  }];
+  if (z < -3 || z > 3 || Math.abs(x - runner.x) > 2) return false;
+  const touches = (ax, ay, az, bx, by, bz, radius) => bounds.some((box) => {
+    const dx = Math.max(box.min.x - Math.max(ax, bx), Math.min(ax, bx) - box.max.x, 0);
+    const dy = Math.max(box.min.y - Math.max(ay, by), Math.min(ay, by) - box.max.y, 0);
+    const dz = Math.max(box.min.z - Math.max(az, bz), Math.min(az, bz) - box.max.z, 0);
+    // A small inward tolerance prevents grazing empty space beside the mesh.
+    return dx * dx + dy * dy + dz * dz < (radius - 0.025) ** 2;
+  });
+  if (touches(x, 0.02, z, x, height - 0.18, z, 0.18)) return true;
+  for (const side of [-1, 1]) {
+    const shoulder = height * (side === 1 ? 0.55 : 0.47);
+    const armHeight = height * (side === 1 ? 0.38 : 0.3);
+    if (touches(x + side * 0.12, shoulder, z, x + side * 0.5, shoulder, z, 0.115) ||
+      touches(x + side * 0.5, shoulder + 0.115, z, x + side * 0.5, shoulder + armHeight - 0.115, z, 0.115)) return true;
+  }
+  return false;
 }
 export function advanceJump(y, vy, dt) {
   if (y <= 0 && vy <= 0) return { y: 0, vy: 0, landed: false };

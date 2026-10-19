@@ -4,17 +4,15 @@ import { overlapsRunner, advanceJump, JUMP_VELOCITY } from "../src/rules.js";
 const runner = { x: 0, y: 0, duck: 0 },
   cactus = { type: "cactus", x: 0, z: 0, height: 1.65, y: 0 },
   bird = { type: "bird", x: 0, z: 0, y: 3.55 };
-test("a grounded runner hits a cactus, while a sufficient jump or lane change clears it", () => {
+test("a grounded runner hits a cactus, while a sufficient jump clears it", () => {
   assert.equal(overlapsRunner(runner, cactus), true);
   assert.equal(overlapsRunner({ ...runner, y: 1.8 }, cactus), false);
-  assert.equal(overlapsRunner({ ...runner, x: 3 }, cactus), false);
   assert.equal(overlapsRunner(runner, { ...cactus, z: -3 }), false);
 });
 test("ducking clears a low pterosaur; jumping into it does not", () => {
   assert.equal(overlapsRunner(runner, bird), true);
   assert.equal(overlapsRunner({ ...runner, duck: 1 }, bird), false);
   assert.equal(overlapsRunner({ ...runner, y: 2 }, bird), true);
-  assert.equal(overlapsRunner({ ...runner, x: 3 }, bird), false);
 });
 test("jump height is physically consistent at 30 and 120 FPS, and landing clamps to the ground", () => {
   const simulate = (dt) => {

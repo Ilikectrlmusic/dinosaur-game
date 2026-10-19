@@ -168,7 +168,6 @@
     <footer class="footer" id="footer">
       <div class="controls-hint">
         <span><kbd>SPACE</kbd> 跳跃</span><span><kbd>↓</kbd> 低头躲避</span
-        ><span><kbd>A</kbd><kbd>D</kbd> 左右移动</span
         ><span><kbd>V</kbd> 切换视角</span>
       </div>
       <span class="footer-tag"
@@ -196,14 +195,13 @@
       </div>
     </div>
     <div class="game-tip hidden" id="game-tip">
-      <kbd>SPACE</kbd><span>跳过仙人掌</span><i></i><kbd>↓</kbd
-      ><span>低头躲避翼龙</span>
+      <kbd class="desktop-key">SPACE</kbd><kbd class="mobile-key">↑</kbd
+      ><span>跳过仙人掌</span><i></i><kbd>↓</kbd
+      ><span>按住躲避翼龙</span>
     </div>
     <div class="mobile-controls hidden" id="mobile-controls">
-      <button id="touch-left" aria-label="向左">←</button
-      ><button id="touch-right" aria-label="向右">→</button
-      ><button id="touch-duck" aria-label="低头">↓</button
-      ><button id="touch-jump" aria-label="跳跃">↑</button>
+      <button type="button" id="touch-duck" aria-label="按住低头">↓</button
+      ><button type="button" id="touch-jump" aria-label="跳跃">↑</button>
     </div>
     <div class="toast" id="toast" role="status"></div>
     <dialog id="guide-dialog" class="modal">
@@ -225,17 +223,14 @@
         <div>
           <span class="guide-number">02</span>
           <h3>留意天空</h3>
-          <p>
-            按住 <kbd>↓</kbd> 或
-            <kbd>S</kbd> 伏低身体，从低空翼龙下穿过。也可以左右换道绕开。
-          </p>
+          <p>按住 <kbd>↓</kbd> 或 <kbd>S</kbd> 伏低身体，从低空翼龙下穿过。</p>
         </div>
         <div>
           <span class="guide-number">03</span>
-          <h3>找到你的路</h3>
+          <h3>专注前方</h3>
           <p>
-            <kbd>A</kbd> / <kbd>D</kbd> 或方向键切换三条路线。按
-            <kbd>V</kbd> 自由切换第一、第三人称。
+            在同一条赛道上前进，判断时机跳跃或低头。按
+            <kbd>V</kbd> 切换第一、第三人称，拖动画面环顾四周。
           </p>
         </div>
         <div>
@@ -290,36 +285,52 @@
         保存并返回 ↗
       </button>
     </dialog>
-    <dialog id="pause-dialog" class="modal compact-modal">
-      <span class="eyebrow">TAKE A BREATH</span>
-      <h2>荒野在等你。</h2>
-      <p>歇一歇，前路还很长。</p>
-      <button class="start-button" id="resume-button">
-        继续旅程 <span>→</span></button
-      ><button type="button" class="camp-button" id="pause-home">
-        返回营地 <span aria-hidden="true">↶</span>
-      </button>
-    </dialog>
-    <dialog id="death-dialog" class="modal death-modal">
-      <span class="eyebrow">THE WILD ALWAYS WINS. UNTIL NEXT TIME.</span>
-      <h2>旅程暂告一段落。</h2>
-      <p id="death-reason">荒野给你上了一课。</p>
-      <div class="death-stats">
-        <div>
-          <span>本次距离</span
-          ><strong id="final-distance">0<small> M</small></strong>
+    <div id="pause-overlay" class="death-overlay" hidden>
+      <section
+        id="pause-dialog"
+        class="modal compact-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pause-title"
+      >
+        <span class="eyebrow">TAKE A BREATH</span>
+        <h2 id="pause-title">荒野在等你。</h2>
+        <p>歇一歇，前路还很长。</p>
+        <button class="start-button" id="resume-button">
+          继续旅程 <span>→</span></button
+        ><button type="button" class="camp-button" id="pause-home">
+          返回营地 <span aria-hidden="true">↶</span>
+        </button>
+      </section>
+    </div>
+    <div id="death-overlay" class="death-overlay" hidden>
+      <section
+        id="death-dialog"
+        class="modal death-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="death-title"
+      >
+        <span class="eyebrow">THE WILD ALWAYS WINS. UNTIL NEXT TIME.</span>
+        <h2 id="death-title">旅程暂告一段落。</h2>
+        <p id="death-reason">荒野给你上了一课。</p>
+        <div class="death-stats">
+          <div>
+            <span>本次距离</span
+            ><strong id="final-distance">0<small> M</small></strong>
+          </div>
+          <div>
+            <span>个人最佳 <b id="new-best" class="hidden">NEW BEST</b></span
+            ><strong id="final-best">0<small> M</small></strong>
+          </div>
         </div>
-        <div>
-          <span>个人最佳 <b id="new-best" class="hidden">NEW BEST</b></span
-          ><strong id="final-best">0<small> M</small></strong>
-        </div>
-      </div>
-      <button type="button" class="start-button" id="retry-button" autofocus>
-        再赴荒野 <span>↗</span></button
-      ><button type="button" class="camp-button" id="death-home">
-        返回营地，换一位骑手 <span aria-hidden="true">↶</span></button
-      ><span class="death-shortcut"><kbd>R</kbd> 快速重新开始</span>
-    </dialog>
+        <button type="button" class="start-button" id="retry-button" autofocus>
+          再赴荒野 <span>↗</span></button
+        ><button type="button" class="camp-button" id="death-home">
+          返回营地，换一位骑手 <span aria-hidden="true">↶</span></button
+        ><span class="death-shortcut"><kbd>R</kbd> 快速重新开始</span>
+      </section>
+    </div>
     <div id="loading" class="loading">
       <div class="loading-logo">SAURIAN<span>PREPARING THE WILD</span></div>
       <div class="loading-track"><i></i></div>

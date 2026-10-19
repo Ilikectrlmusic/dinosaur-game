@@ -176,7 +176,7 @@ export class DesertWorld {
     texture.repeat.set(1, 35);
     texture.colorSpace = THREE.SRGBColorSpace;
     const road = new THREE.Mesh(
-      new THREE.PlaneGeometry(12, 700),
+      new THREE.PlaneGeometry(6, 700),
       new THREE.MeshStandardMaterial({
         map: texture,
         transparent: true,
@@ -197,7 +197,7 @@ export class DesertWorld {
     );
     for (let i = 0; i < 240; i++) {
       const side = i % 2 ? 1 : -1;
-      temp.position.set(side * rand(4.5, 7.8), 0.02, rand(-260, 60));
+      temp.position.set(side * rand(2.7, 4.2), 0.02, rand(-260, 60));
       temp.scale.set(rand(0.025, 0.12), rand(0.025, 0.07), rand(0.04, 0.16));
       temp.rotation.set(Math.random(), Math.random(), Math.random());
       temp.updateMatrix();

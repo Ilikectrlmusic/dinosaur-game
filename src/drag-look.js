@@ -12,11 +12,17 @@ export class DragLook {
       this.pointer = event.pointerId;
       this.x = event.clientX;
       this.y = event.clientY;
-      canvas.setPointerCapture(event.pointerId);
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch {
+        /* Global end handlers cover Safari interruptions. */
+      }
       canvas.classList.add("is-dragging");
     });
     canvas.addEventListener("pointermove", (event) => {
       if (this.pointer !== event.pointerId) return;
+      if (event.pointerType === "mouse" && !(event.buttons & 1))
+        return this.cancel();
       if (!canDrag()) return this.cancel();
       this.yaw -= (event.clientX - this.x) * 0.005;
       this.pitch = Math.max(
@@ -31,6 +37,16 @@ export class DragLook {
         if (this.pointer === event.pointerId) this.cancel();
       });
     }
+    for (const type of ["pointerup", "pointercancel"]) {
+      window.addEventListener(
+        type,
+        (event) => {
+          if (this.pointer === event.pointerId) this.cancel();
+        },
+        true,
+      );
+    }
+    canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     canvas.addEventListener("dblclick", () => {
       if (!canDrag()) return;
       this.reset();
@@ -43,8 +59,11 @@ export class DragLook {
     const pointer = this.pointer;
     this.pointer = null;
     this.canvas.classList.remove("is-dragging");
-    if (pointer !== null && this.canvas.hasPointerCapture(pointer)) {
-      this.canvas.releasePointerCapture(pointer);
+    try {
+      if (pointer !== null && this.canvas.hasPointerCapture(pointer))
+        this.canvas.releasePointerCapture(pointer);
+    } catch {
+      /* Safari may have cancelled it already. */
     }
   }
 

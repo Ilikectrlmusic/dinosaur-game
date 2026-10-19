@@ -43,8 +43,10 @@ test("menu settings, running controls, cactus jump, collision physics and retry 
   expect(await page.evaluate(() => window.__saurian.state.view)).toBe("first");
   await page.keyboard.press("v");
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction(() => window.__saurian.state.x > 2.5);
   await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("a");
+  await page.keyboard.press("d");
+  expect(await page.evaluate(() => window.__saurian.state.x)).toBe(0);
   await page.keyboard.down("ArrowDown");
   await page.waitForFunction(() => window.__saurian.state.duck > 0.9);
   await page.keyboard.up("ArrowDown");
@@ -61,6 +63,7 @@ test("menu settings, running controls, cactus jump, collision physics and retry 
     {},
     { timeout: 120000 },
   );
+  expect(await page.evaluate(() => window.__saurian.state.obstacles.every(o => o.x === 0))).toBe(true);
   await page.keyboard.press("Space");
   await page.waitForFunction(() => window.__saurian.state.y > 1);
   await page.waitForFunction(
@@ -115,10 +118,12 @@ test("mobile layout and touch controls remain usable", async ({ page }) => {
   expect(size.scroll).toBe(size.width);
   await page.locator("#start-button").click();
   await expect(page.locator("#touch-jump")).toBeVisible();
-  await page.locator("#touch-jump").dispatchEvent("pointerdown");
+  await expect(page.locator("#mobile-controls button")).toHaveCount(2);
+  await expect(page.locator("#touch-left, #touch-right")).toHaveCount(0);
+  await page.locator("#touch-jump").dispatchEvent("pointerdown", {pointerId:1, button:0});
   await page.waitForFunction(() => window.__saurian.state.y > 0);
-  await page.locator("#touch-right").dispatchEvent("pointerdown");
-  expect(await page.evaluate(() => window.__saurian.state.lane)).toBe(1);
+  await page.locator("#touch-jump").dispatchEvent("pointerup", {pointerId:1, button:0});
+  expect(await page.evaluate(() => window.__saurian.state.x)).toBe(0);
 });
 
 test("ragdoll settles under gravity, rotates and throws the rider without invalid positions", async ({

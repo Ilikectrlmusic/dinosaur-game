@@ -10,6 +10,14 @@ export class CrashPhysics {
     this.objects = [];
     this.elapsed = 0;
     this.onImpact = onImpact;
+    try {
+      this.build(scene, dino, speed, obstacle, onImpact);
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
+  }
+  build(scene, dino, speed, obstacle, onImpact) {
     this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -16, 0) });
     this.world.solver.iterations = 16;
     this.world.allowSleep = true;
@@ -135,6 +143,8 @@ export class CrashPhysics {
     const pos = object.getWorldPosition(new THREE.Vector3()),
       quat = object.getWorldQuaternion(new THREE.Quaternion());
     this.scene.attach(object);
+    const part = { object, body: null };
+    this.objects.push(part);
     const body = new CANNON.Body({
       mass,
       material: this.material,
@@ -148,7 +158,7 @@ export class CrashPhysics {
     body.quaternion.copy(quat);
     body.velocity.copy(this.velocity);
     this.world.addBody(body);
-    this.objects.push({ object, body, offset: new THREE.Vector3() });
+    part.body = body;
     return body;
   }
   connect(a, b, anchor, angle) {
@@ -200,7 +210,9 @@ export class CrashPhysics {
       this.scene.remove(object);
       object.traverse((o) => {
         if (o.geometry) geometries.add(o.geometry);
-        if (o.material) materials.add(o.material);
+        if (Array.isArray(o.material))
+          o.material.forEach((material) => materials.add(material));
+        else if (o.material) materials.add(o.material);
       });
     });
     geometries.forEach((g) => g.dispose());

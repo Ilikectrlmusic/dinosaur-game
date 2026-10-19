@@ -17,7 +17,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test tests/rules.test.mjs && playwright test"
+    "test": "node --test tests/rules.test.mjs && playwright test --project=chromium",
+    "test:mobile": "playwright test --project=mobile-webkit"
   },
   "description": "A cinematic 3D dinosaur riding endless runner built with Three.js and cannon-es",
   "engines": {

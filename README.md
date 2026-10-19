@@ -27,7 +27,6 @@ npm run dev
 | --------------------------- | -------------------------------------- |
 | Space / ↑ / W               | 跳跃                                   |
 | 按住 ↓ / S                  | 伏低身体                               |
-| A / D 或 ← / →              | 在三条路线间移动                       |
 | V                           | 第一／第三人称视角                     |
 | Esc / P                     | 暂停、继续                             |
 | R                           | 重新出发                               |
@@ -36,7 +35,7 @@ npm run dev
 | 鼠标左键拖动 / 手指拖动画面 | 环顾视角（第一人称转头，第三人称环绕） |
 | 双击画面                    | 镜头回正                               |
 
-手机支持触摸操作。三位骑手外观不同；三种难度影响初速度、加速上限、障碍间隔与组合。最佳距离按难度单独保存于浏览器。
+游戏使用一条赛道，通过跳跃和低头躲避障碍。手机左侧按钮按住低头，右侧按钮跳跃，拖动画面可围绕骑手转动视角。三位骑手外观不同；三种难度影响初速度、加速上限与障碍间隔。最佳距离按难度单独保存于浏览器。
 
 碰撞后使用 cannon-es 刚体、地面接触和受限关节模拟恐龙与骑手翻滚，保留碰撞瞬间的位置和动量。音效通过 Web Audio 实时合成，需用户首次点击后才能播放。模型为程序化平滑网格，不依赖外部 3D 资产。浏览器中未启用 WebGL 时会显示恢复说明。
 
@@ -47,4 +46,6 @@ npm run build
 npm test
 ```
 
-测试使用 Chromium。默认读取 `CHROMIUM_PATH`，没有设置时尝试 `/usr/bin/chromium`；可安装 Playwright Chromium 后通过该变量指定路径。
+默认测试使用 Chromium。读取 `CHROMIUM_PATH`，没有设置时尝试 `/usr/bin/chromium`；可安装 Playwright Chromium 后通过该变量指定路径。
+
+手机 Safari 回归使用 Playwright WebKit：安装 `npx playwright install --with-deps webkit` 后运行 `npx playwright test --project=mobile-webkit`。如需指定已有的 WebKit 启动器，可设置 `WEBKIT_PATH`。测试覆盖单赛道、镜头居中、长按与触摸取消，以及连续死亡后重开、返回营地和动画异常恢复。

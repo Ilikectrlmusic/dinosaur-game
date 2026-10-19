@@ -19,6 +19,8 @@ import { GameAudio } from "./audio.js";
 import { CrashPhysics } from "./physics.js";
 import { JUMP_VELOCITY, advanceJump, overlapsRunner } from "./rules.js";
 import { DragLook } from "./drag-look.js";
+import { DeathOverlay } from "./death-overlay.js";
+import { MobileInput } from "./mobile-input.js";
 
 const $ = (id) => document.getElementById(id);
 const CONFIG = {
@@ -58,7 +60,6 @@ const state = {
   distance: 0,
   best: saved.best || {},
   speed: 0,
-  lane: 0,
   x: 0,
   y: 0,
   vy: 0,
@@ -81,6 +82,9 @@ let renderer,
   world,
   camera,
   dragLook,
+  mobileInput,
+  deathOverlay,
+  pauseOverlay,
   dino,
   physics = null,
   obstacles = [],
@@ -88,7 +92,9 @@ let renderer,
   raf = 0,
   toastTimeout,
   lastFrame = 0,
-  crashAge = 0;
+  crashAge = 0,
+  roundGeneration = 0,
+  crashIssue = null;
 const targetCamera = new THREE.Vector3(),
   targetLook = new THREE.Vector3(),
   cameraLook = new THREE.Vector3(-3, 1.9, 1.5),
@@ -100,7 +106,8 @@ const targetCamera = new THREE.Vector3(),
   pitchAxis = new THREE.Vector3(),
   yawRotation = new THREE.Quaternion(),
   pitchRotation = new THREE.Quaternion(),
-  lookEuler = new THREE.Euler(0, 0, 0, "YXZ");
+  lookEuler = new THREE.Euler(0, 0, 0, "YXZ"),
+  riderScreen = new THREE.Vector3();
 let previousStep = 0;
 function releaseModel(root) {
   const geometries = new Set(),
@@ -208,19 +215,33 @@ function setSound(enabled) {
 function pause() {
   if (state.mode !== "running") return;
   state.mode = "paused";
-  dragLook.cancel();
+  resetInputs();
   audio.update(0, 0, false, false);
-  $("pause-dialog").showModal();
+  pauseOverlay.open();
 }
 function resume() {
   if (state.mode !== "paused") return;
-  $("pause-dialog").close();
+  pauseOverlay.close();
   state.mode = "running";
   audio.init();
   lastFrame = performance.now();
 }
+function resetInputs() {
+  dragLook?.cancel();
+  mobileInput?.reset();
+  state.ducking = false;
+}
+function hasOpenDialog() {
+  return (
+    deathOverlay?.isOpen ||
+    pauseOverlay?.isOpen ||
+    !!document.querySelector("dialog[open]")
+  );
+}
 function closeDialogs() {
-  dragLook.cancel();
+  resetInputs();
+  deathOverlay?.close();
+  pauseOverlay?.close();
   document.querySelectorAll("dialog[open]").forEach((d) => d.close());
 }
 function clearObstacles() {
@@ -229,6 +250,8 @@ function clearObstacles() {
 }
 function startGame() {
   clearTimeout(deathTimeout);
+  roundGeneration++;
+  crashIssue = null;
   closeDialogs();
   dragLook.reset();
   audio.init();
@@ -239,7 +262,6 @@ function startGame() {
     mode: "running",
     distance: 0,
     speed: CONFIG[state.difficulty].speed,
-    lane: 0,
     x: 0,
     y: 0,
     vy: 0,
@@ -264,6 +286,8 @@ function startGame() {
 }
 function goHome() {
   clearTimeout(deathTimeout);
+  roundGeneration++;
+  crashIssue = null;
   closeDialogs();
   dragLook.reset();
   clearObstacles();
@@ -271,7 +295,6 @@ function goHome() {
   Object.assign(state, {
     mode: "menu",
     speed: 0,
-    lane: 0,
     x: 0,
     y: 0,
     vy: 0,
@@ -292,77 +315,50 @@ function jump() {
   audio.jump();
   world.emitDust(state.x, 0, 12);
 }
-function lane(direction) {
-  if (state.mode !== "running") return;
-  state.lane = THREE.MathUtils.clamp(state.lane + direction, -1, 1);
-}
-function spawnObstacle(type, laneValue, z = -95) {
+function spawnObstacle(type, z = -95) {
   const bird = type === "bird";
   const height =
     state.difficulty === "hard" ? rand(1.45, 1.9) : rand(1.25, 1.65);
   const object = bird ? buildPterosaur() : buildCactus(height);
-  object.userData = {
-    ...object.userData,
-    type,
-    height,
-    passed: false,
-    lane: laneValue,
-  };
-  object.position.set(laneValue * 3, bird ? 3.55 : 0, z);
+  object.userData = { ...object.userData, type, height, passed: false };
+  object.position.set(0, bird ? 3.55 : 0, z);
   if (bird) object.rotation.y = Math.PI;
   world.scene.add(object);
   obstacles.push(object);
   return object;
 }
 function spawnWave() {
-  const config = CONFIG[state.difficulty];
   const bird = state.distance > 70 && Math.random() < 0.4;
-  // First obstacle teaches jumping in the current lane; later waves leave an escape route.
-  const first = state.distance < 40,
-    l = first ? 0 : Math.floor(rand(-1, 2));
-  spawnObstacle(bird ? "bird" : "cactus", l);
-  if (
-    !first &&
-    state.difficulty !== "easy" &&
-    Math.random() < (state.difficulty === "hard" ? 0.5 : 0.25)
-  ) {
-    const second = [-1, 0, 1].filter((v) => v !== l)[
-      Math.floor(Math.random() * 2)
-    ];
-    spawnObstacle(bird ? "cactus" : "bird", second, -95 - rand(0, 3));
-  }
-  state.spawn = config.gap + rand(0.2, 0.85);
+  // One obstacle at a time on a single track, with time to land before ducking.
+  spawnObstacle(bird ? "bird" : "cactus");
+  const birdAdvantage = 95 / state.speed - 95 / (state.speed + 2.5);
+  state.spawn =
+    Math.max(CONFIG[state.difficulty].gap, 1.25 + birdAdvantage) +
+    rand(0.2, 0.85);
 }
 function updateHUD() {
   $("distance").innerHTML =
     String(Math.floor(state.distance)).padStart(5, "0") + "<small> M</small>";
   $("speed").textContent = Math.round(state.speed * 3.6);
 }
+function finishCrash(generation) {
+  if (generation !== roundGeneration || state.mode !== "crashed") return;
+  clearTimeout(deathTimeout);
+  resetInputs();
+  state.mode = "dead";
+  audio.update(0, 0, false, false);
+  document.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
+  deathOverlay.open();
+}
 function crash(obstacle) {
   if (state.mode !== "running") return;
   state.mode = "crashed";
-  dragLook.cancel();
+  resetInputs();
   crashAge = 0;
-  audio.hit();
+  const generation = roundGeneration;
   document.body.classList.add("dead");
   $("game-tip").classList.add("hidden");
   $("mobile-controls").classList.add("hidden");
-  dino.root.updateMatrixWorld(true);
-  physics = new CrashPhysics(
-    world.scene,
-    dino,
-    state.speed,
-    obstacle,
-    (position, impact) => {
-      world.emitDust(
-        position.x,
-        position.z,
-        Math.min(25, Math.floor(impact * 2)),
-      );
-      audio.land();
-    },
-  );
-  dino.root.visible = false;
   const isBest =
     Math.floor(state.distance) > (state.best[state.difficulty] || 0);
   if (isBest) state.best[state.difficulty] = Math.floor(state.distance);
@@ -374,23 +370,43 @@ function crash(obstacle) {
   $("new-best").classList.toggle("hidden", !isBest);
   $("death-reason").textContent =
     obstacle.userData.type === "bird"
-      ? "低空翼龙掠过了你的路线。下次试着伏低身体，或换一条路。"
-      : "没能越过这片荆棘。下次提前起跳，或从两侧绕过去。";
-  deathTimeout = setTimeout(() => {
-    if (state.mode === "crashed") {
-      dragLook.cancel();
-      state.mode = "dead";
-      audio.update(0, 0, false, false);
-      $("death-dialog").showModal();
-    }
-  }, 2700);
+      ? "低空翼龙掠过了你的路线。下次留意天空，及时伏低身体。"
+      : "没能越过这片荆棘。下次接近仙人掌时，试着提前起跳。";
+  // Register the transition first: optional animation/audio must never strand the UI.
+  deathTimeout = setTimeout(() => finishCrash(generation), 2700);
+  try {
+    audio.hit();
+    dino.root.updateMatrixWorld(true);
+    physics = new CrashPhysics(
+      world.scene,
+      dino,
+      state.speed,
+      obstacle,
+      (position, impact) => {
+        world.emitDust(
+          position.x,
+          position.z,
+          Math.min(25, Math.floor(impact * 2)),
+        );
+        audio.land();
+      },
+    );
+    dino.root.visible = false;
+  } catch (error) {
+    crashIssue = error.message;
+    console.warn(
+      "Crash animation could not start; keeping result controls available.",
+      error,
+    );
+    finishCrash(generation);
+  }
 }
 function updateGameplay(dt) {
   state.runTime += dt;
   const c = CONFIG[state.difficulty];
   state.speed = Math.min(c.maxSpeed, c.speed + state.runTime * 0.065);
   state.distance += state.speed * dt;
-  state.x = THREE.MathUtils.damp(state.x, state.lane * 3, 10, dt);
+  state.x = 0;
   if (state.y > 0 || state.vy > 0) {
     const jumpStep = advanceJump(state.y, state.vy, dt);
     state.y = jumpStep.y;
@@ -407,12 +423,7 @@ function updateGameplay(dt) {
     dt,
   );
   dino.root.position.set(state.x, state.y, 0);
-  dino.root.rotation.z = THREE.MathUtils.damp(
-    dino.root.rotation.z,
-    (state.lane * 3 - state.x) * -0.045,
-    8,
-    dt,
-  );
+  dino.root.rotation.z = THREE.MathUtils.damp(dino.root.rotation.z, 0, 8, dt);
   animateDinosaur(dino, state.time, 1, state.duck, state.y);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
@@ -474,7 +485,7 @@ function updateCamera(dt) {
     dino.rider.root.visible = true;
     if (mobile) {
       targetCamera.set(8.8, 5.1, 8.8);
-      targetLook.set(-1.2, 2.3, -1.3);
+      targetLook.set(0, 2.6, 0);
     } else {
       targetCamera.set(8.6, 4.7, 9.6);
       targetLook.set(-3, 1.9, 1.5);
@@ -500,7 +511,8 @@ function updateCamera(dt) {
       4.6 + state.y * 0.45 + bob,
       9.8,
     );
-    targetLook.set(state.x * 0.8, 1.95 + state.y * 0.35, -5.5);
+    if (mobile) targetLook.set(0, 2.6 + state.y * 0.4, 0);
+    else targetLook.set(0, 1.95 + state.y * 0.35, -5.5);
   }
   if (state.view === "first" && state.mode !== "menu" && !physics) {
     // The eye stays on the rider; dragging changes the direction of the gaze.
@@ -510,7 +522,7 @@ function updateCamera(dt) {
   } else {
     // Rotate the position and aim together around the mount, preserving framing.
     if (physics) orbitPivot.copy(physics.centerBody.position);
-    else orbitPivot.set(state.x, 2.2 + state.y * 0.4, 0);
+    else orbitPivot.set(0, (mobile ? 2.6 : 2.2) + state.y * 0.4, 0);
     orbitOffset.subVectors(targetCamera, orbitPivot);
     orbitSpherical.setFromVector3(orbitOffset);
     const angle = orbitSpherical.theta + dragLook.yaw;
@@ -556,8 +568,19 @@ function frame(now) {
   }
   if (physics) {
     crashAge += dt;
-    physics.update(dt);
+    try {
+      physics.update(dt);
+    } catch (error) {
+      crashIssue = error.message;
+      console.warn(
+        "Crash simulation interrupted; showing the result controls.",
+        error,
+      );
+      finishCrash(roundGeneration);
+      return;
+    }
   }
+  if (state.mode === "dead") return;
   const speed = state.mode === "running" ? state.speed : 0;
   world.update(dt, state.time, speed);
   audio.update(dt, speed, state.mode === "running", state.y > 0.1);
@@ -585,8 +608,12 @@ function bindUI() {
     }),
   );
   $("start-button").addEventListener("click", startGame);
-  $("retry-button").addEventListener("click", startGame);
-  $("death-home").addEventListener("click", goHome);
+  $("retry-button").addEventListener("click", () => {
+    if (deathOverlay.isOpen) startGame();
+  });
+  $("death-home").addEventListener("click", () => {
+    if (deathOverlay.isOpen) goHome();
+  });
   $("pause-home").addEventListener("click", goHome);
   $("pause-button").addEventListener("click", pause);
   $("resume-button").addEventListener("click", resume);
@@ -622,11 +649,7 @@ function bindUI() {
   );
   document.querySelectorAll("dialog").forEach((dialog) => {
     dialog.addEventListener("click", (e) => {
-      if (
-        e.target === dialog &&
-        dialog.id !== "pause-dialog" &&
-        dialog.id !== "death-dialog"
-      ) {
+      if (e.target === dialog) {
         const r = dialog.getBoundingClientRect();
         if (
           e.clientX < r.left ||
@@ -635,15 +658,6 @@ function bindUI() {
           e.clientY > r.bottom
         )
           dialog.close();
-      }
-    });
-    dialog.addEventListener("cancel", (e) => {
-      if (dialog.id === "pause-dialog") {
-        e.preventDefault();
-        resume();
-      } else if (dialog.id === "death-dialog") {
-        e.preventDefault();
-        goHome();
       }
     });
   });
@@ -667,13 +681,19 @@ function bindUI() {
   window.addEventListener("keydown", (e) => {
     if (e.target.matches("input,select")) return;
     const key = e.key.toLowerCase();
-    if (
-      state.mode === "running" &&
-      [" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)
-    )
+    if (state.mode === "running" && [" ", "arrowup", "arrowdown"].includes(key))
       e.preventDefault();
-    if (document.querySelector("dialog[open]")) {
-      if (key === "r" && state.mode === "dead") startGame();
+    if (hasOpenDialog()) {
+      if (key === "r" && state.mode === "dead") {
+        e.preventDefault();
+        startGame();
+      } else if (key === "escape" && state.mode === "dead") {
+        e.preventDefault();
+        goHome();
+      } else if ((key === "escape" || key === "p") && state.mode === "paused") {
+        e.preventDefault();
+        resume();
+      }
       return;
     }
     if (e.repeat) return;
@@ -692,39 +712,24 @@ function bindUI() {
       startGame();
     else if (key === " " || key === "arrowup" || key === "w") jump();
     else if (key === "arrowdown" || key === "s") state.ducking = true;
-    else if (key === "arrowleft" || key === "a") lane(-1);
-    else if (key === "arrowright" || key === "d") lane(1);
   });
   window.addEventListener("keyup", (e) => {
     if (["arrowdown", "s"].includes(e.key.toLowerCase())) state.ducking = false;
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
-      dragLook.cancel();
-      state.ducking = false;
-      pause();
+      resetInputs();
+      if (state.mode === "crashed") finishCrash(roundGeneration);
+      else pause();
     }
   });
-  $("touch-jump").addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    jump();
+  mobileInput = new MobileInput($("mobile-controls"), {
+    canUse: () => state.mode === "running" && !hasOpenDialog(),
+    onJump: jump,
+    onDuck: (held) => {
+      state.ducking = held;
+    },
   });
-  $("touch-left").addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    lane(-1);
-  });
-  $("touch-right").addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    lane(1);
-  });
-  $("touch-duck").addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    state.ducking = true;
-    e.target.setPointerCapture(e.pointerId);
-  });
-  ["pointerup", "pointercancel", "lostpointercapture"].forEach((event) =>
-    $("touch-duck").addEventListener(event, () => (state.ducking = false)),
-  );
   document.addEventListener("pointerdown", () => audio.init(), { once: true });
 }
 function applyQuality() {
@@ -750,8 +755,7 @@ function init() {
     $("scene").appendChild(renderer.domElement);
     dragLook = new DragLook(renderer.domElement, {
       canDrag: () =>
-        ["menu", "running", "crashed"].includes(state.mode) &&
-        !document.querySelector("dialog[open]"),
+        ["menu", "running", "crashed"].includes(state.mode) && !hasOpenDialog(),
       onReset: () => toast("视角已回正"),
     });
     camera = new THREE.PerspectiveCamera(
@@ -766,6 +770,8 @@ function init() {
     resetDino();
     applyQuality();
     updateSelection();
+    deathOverlay = new DeathOverlay($("death-overlay"));
+    pauseOverlay = new DeathOverlay($("pause-overlay"));
     bindUI();
     for (let i = 0; i < 3; i++) {
       document.querySelector(`.portrait-${i}`).style.backgroundImage =
@@ -798,7 +804,6 @@ function init() {
             speed: state.speed,
             y: state.y,
             duck: state.duck,
-            lane: state.lane,
             x: state.x,
             sound: state.sound,
             obstacles: obstacles.map((o) => ({
@@ -814,6 +819,11 @@ function init() {
               target: cameraLook.toArray(),
             },
             physicsBodies: physics?.world.bodies.length || 0,
+            crashIssue,
+            riderScreen: dino.rider.pelvis
+              .getWorldPosition(riderScreen)
+              .project(camera)
+              .toArray(),
           };
         },
         get renderer() {

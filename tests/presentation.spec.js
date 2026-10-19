@@ -34,6 +34,7 @@ async function layout(page) {
     const hint = document.querySelector(".camera-drag-hint");
     return {
       tipBottom: innerHeight - tip.getBoundingClientRect().bottom,
+      tipCenterOffset: tip.getBoundingClientRect().left + tip.getBoundingClientRect().width / 2 - innerWidth / 2,
       viewAnchor: innerWidth <= 700 ? view.getBoundingClientRect().top : innerHeight - view.getBoundingClientRect().bottom,
       viewLeft: view.getBoundingClientRect().left,
       hudGap: view.getBoundingClientRect().top - document.getElementById("game-hud").getBoundingClientRect().bottom,
@@ -62,9 +63,9 @@ for (const mobile of [false, true]) {
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await openControlledGame(page);
-      await expect(page.locator("#camp-best")).toHaveText("00321 M");
+      await expect(page.locator("#camp-best")).toHaveText("321 M");
       await page.locator('[data-difficulty="normal"]').click();
-      await expect(page.locator("#camp-best")).toHaveText("06543 M");
+      await expect(page.locator("#camp-best")).toHaveText("6543 M");
       await page.locator('[data-difficulty="hard"]').click();
       await expect(page.locator("#camp-best")).toHaveText("98765 M");
       await page.locator('[data-difficulty="easy"]').click();
@@ -82,12 +83,22 @@ for (const mobile of [false, true]) {
           expect(camp.edgeGap).toBeGreaterThanOrEqual(6);
           expect(camp.textGap).toBeGreaterThan(12);
         }
+      } else {
+        for (const [width, height] of [[1920, 1080], [1920, 900], [1600, 940], [1440, 900], [1366, 768], [1280, 800], [1024, 768], [900, 800], [900, 650], [800, 600]]) {
+          await page.setViewportSize({ width, height });
+          const gap = await page.evaluate(() => document.getElementById("footer").getBoundingClientRect().top - document.querySelector(".camp-record").getBoundingClientRect().bottom);
+          expect(gap, `camp record above footer at ${width}×${height}`).toBeGreaterThanOrEqual(16);
+        }
+        await page.setViewportSize({ width: 1280, height: 800 });
       }
-      await expect(page.locator("#toast")).toHaveCSS("top", "72px");
+      await expect(page.locator("#toast")).toHaveCSS("top", mobile ? "72px" : "32px");
       await page.locator("#start-button").click();
       await page.clock.runFor(100);
+      await expect(page.locator("#best")).toHaveText("321 M");
+      expect(await page.locator("#distance").innerText()).toMatch(/^(0|[1-9]\d*) M$/);
       const opening = await layout(page);
       expect(opening.tipBottom).toBe(mobile ? 104 : 39);
+      expect(Math.abs(opening.tipCenterOffset)).toBeLessThan(0.5);
       expect(opening.viewAnchor).toBe(mobile ? 98 : 32);
       if (mobile) {
         expect(opening.viewLeft).toBe(18);
@@ -113,7 +124,7 @@ for (const mobile of [false, true]) {
             map.updateMatrix();
             return map.transformUv(uv).toArray();
           };
-          return { color: mapUV(mesh.material.map), normal: mesh.material.normalMap ? mapUV(mesh.material.normalMap) : null };
+          return { color: mapUV(mesh.material.map), normal: mesh.material.normalMap ? mapUV(mesh.material.normalMap) : null, height: hit.point.y };
         };
         window.__testPlantIndex ??= world.plants.findIndex((plant) => plant.position.z < -80);
         const plant = world.plants[window.__testPlantIndex];
@@ -121,11 +132,14 @@ for (const mobile of [false, true]) {
           distance: world.distance, position: point.toArray(), plantZ: plant.position.z,
           ground: sample(650, plant.position.x, plant.position.z),
           trail: sample(6, 0, -20 + world.distance),
+          contactError: Math.max(...world.plants.map((plant) => Math.abs(plant.position.y - sample(650, plant.position.x, plant.position.z).height))),
         };
       });
       const firstMountain = await worldPosition();
       await playUntil(page, 4.3);
       const nextMountain = await worldPosition();
+      expect(firstMountain.contactError).toBeLessThan(1e-6);
+      expect(nextMountain.contactError).toBeLessThan(1e-6);
       expect(nextMountain.position[2] - firstMountain.position[2]).toBeCloseTo(nextMountain.distance - firstMountain.distance, 8);
       expect(nextMountain.position[2]).toBeGreaterThan(firstMountain.position[2] + 40);
       expect(nextMountain.plantZ - firstMountain.plantZ).toBeCloseTo(nextMountain.distance - firstMountain.distance, 6);

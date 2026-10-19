@@ -703,7 +703,7 @@ kbd {
 .toast {
   position: fixed;
   z-index: 10;
-  top: 72px;
+  top: 32px;
   left: 50%;
   transform: translate(-50%, -15px);
   padding: 11px 20px;
@@ -1116,7 +1116,7 @@ select {
   line-height: 1.8;
   color: #bec5b3;
 }
-@media (min-width: 1600px) {
+@media (min-width: 1600px) and (min-height: 1000px) {
   .menu {
     top: 20%;
     width: 490px;
@@ -1159,7 +1159,7 @@ select {
     font-size: 10px;
   }
 }
-@media (max-height: 790px) and (min-width: 901px) {
+@media (max-height: 860px) and (min-width: 701px) {
   .header {
     height: 86px;
   }
@@ -1534,13 +1534,13 @@ select {
   }
   .game-tip {
     bottom: calc(var(--touch-bottom) + 84px);
-    left: 18px;
-    transform: none;
+    left: 50%;
+    transform: translateX(-50%);
     display: grid;
     grid-template-columns: 17px minmax(0, 1fr) 17px minmax(0, 1fr);
     align-content: center;
     height: 36px;
-    width: min(220px, calc(100% - 146px));
+    width: min(270px, calc(100% - 36px));
     font-size: 8px;
     column-gap: 6px;
     row-gap: 0;
@@ -1677,14 +1677,14 @@ select {
     width: 370px;
   }
   .menu h1 {
-    font-size: 70px;
-    margin: 15px 0;
+    font-size: 64px;
+    margin: 13px 0;
   }
   .intro-text {
     font-size: 10px;
   }
   .expedition {
-    margin-top: 19px;
+    margin-top: 16px;
   }
   .rider-options {
     margin-top: 8px;

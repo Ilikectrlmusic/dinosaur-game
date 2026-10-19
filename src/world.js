@@ -88,7 +88,7 @@ export class DesertWorld {
       p.setY(i, terrainHeight(x, z - 240));
     }
     geo.computeVertexNormals();
-    const ground = new THREE.Mesh(
+    const ground = this.ground = new THREE.Mesh(
       geo,
       new THREE.MeshStandardMaterial({
         map: this.sand,
@@ -200,6 +200,21 @@ export class DesertWorld {
   createRocks() { createRockField(this); }
   createMountains() { createBadlands(this); }
   createPlants() { createVegetation(this, buildCactus); }
+  groundHeightAt(x, z) {
+    // Interpolate the rendered triangles, including the ground mesh's placement.
+    // Sampling the smooth formula alone can leave plants above a coarse triangle.
+    const { width, height, widthSegments: columns, heightSegments: rows } = this.ground.geometry.parameters;
+    const gx = THREE.MathUtils.clamp((x - this.ground.position.x + width / 2) / width * columns, 0, columns);
+    const gz = THREE.MathUtils.clamp((z - this.ground.position.z + height / 2) / height * rows, 0, rows);
+    const column = Math.min(Math.floor(gx), columns - 1), row = Math.min(Math.floor(gz), rows - 1);
+    const u = gx - column, v = gz - row;
+    const vertices = this.ground.geometry.attributes.position;
+    const a = row * (columns + 1) + column, b = a + columns + 1;
+    const ya = vertices.getY(a), yb = vertices.getY(b), yc = vertices.getY(b + 1), yd = vertices.getY(a + 1);
+    return this.ground.position.y + (u + v <= 1
+      ? ya + (yd - ya) * u + (yb - ya) * v
+      : yc + (yb - yc) * (1 - u) + (yd - yc) * (1 - v));
+  }
   createDust() {
     const positions = new Float32Array(220 * 3);
     for (let i = 0; i < 220; i++) {
@@ -278,11 +293,8 @@ export class DesertWorld {
       p.position.z += speed * dt;
       if (p.position.z > 55) {
         p.position.z -= 260;
-        p.position.y = Math.max(
-          0,
-          terrainHeight(p.position.x, p.position.z),
-        );
       }
+      p.position.y = this.groundHeightAt(p.position.x, p.position.z);
     });
     updateLandscape(this, time, mountHeight);
     this.pebbles.position.z = this.distance % 80;

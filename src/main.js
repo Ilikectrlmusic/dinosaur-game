@@ -169,7 +169,7 @@ function updateSelection() {
   updateCampBest();
 }
 function updateCampBest() {
-  $("camp-best").innerHTML = String(Math.floor(state.best[state.difficulty] || 0)).padStart(5, "0") + "<small> M</small>";
+  $("camp-best").innerHTML = Math.floor(state.best[state.difficulty] || 0) + "<small> M</small>";
 }
 function resetDino() {
   if (physics) {
@@ -275,7 +275,7 @@ function startGame() {
   $("mobile-controls").classList.remove("hidden");
   $("hud-difficulty").textContent = CONFIG[state.difficulty].label;
   $("best").innerHTML =
-    String(Math.floor(state.best[state.difficulty] || 0)).padStart(5, "0") +
+    Math.floor(state.best[state.difficulty] || 0) +
     " <small>M</small>";
   updateHUD();
   persist();
@@ -334,7 +334,7 @@ function spawnWave() {
 }
 function updateHUD() {
   $("distance").innerHTML =
-    String(Math.floor(state.distance)).padStart(5, "0") + "<small> M</small>";
+    Math.floor(state.distance) + "<small> M</small>";
   $("speed").textContent = Math.round(state.speed * 3.6);
 }
 function finishCrash(generation) {

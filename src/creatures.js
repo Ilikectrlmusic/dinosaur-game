@@ -694,10 +694,12 @@ export function buildCactus(height = 1.8) {
     roughness: 1,
   });
   const trunk = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.18, height - 0.36, 6, 12),
+    // Bury the rounded lower cap so a broad stem emerges from the soil.
+    // The visible top stays at the obstacle's gameplay height.
+    new THREE.CapsuleGeometry(0.18, height - 0.36 + 0.16, 6, 12),
     green,
   );
-  trunk.position.y = height / 2;
+  trunk.position.y = (height - 0.16) / 2;
   trunk.castShadow = true;
   group.add(trunk);
   const tip = height * 0.52;

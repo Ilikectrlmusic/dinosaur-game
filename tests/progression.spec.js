@@ -51,7 +51,7 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
     });
   });
   for (const model of cactusModels) {
-    expect(model.min).toBeCloseTo(0, 5);
+    expect(model.min).toBeCloseTo(-0.16, 5);
     expect(model.max).toBeCloseTo(model.height, 5);
   }
   await page.evaluate(() => {
@@ -191,7 +191,7 @@ test("triple cacti render as three plants and retain three physical colliders du
     const { Box3 } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
     const heights = cluster.children.map((plant) => {
       const bounds = new Box3().setFromObject(plant);
-      return bounds.max.y - bounds.min.y;
+      return bounds.max.y;
     });
     const plants = cluster.children.map((plant) => plant.position.toArray());
     const physics = new CrashPhysics(scene, dino, 20, cluster);

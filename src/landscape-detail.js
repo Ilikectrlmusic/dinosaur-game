@@ -222,7 +222,7 @@ export function createVegetation(world, buildCactus) {
   for (let i = 0; i < 26; i++) {
     const cactus = buildCactus(rand(1.4, 3.8));
     const x = (i % 2 ? 1 : -1) * rand(5.5, 36), z = rand(-205, 50);
-    cactus.position.set(x, Math.max(0, terrainHeight(x, z)), z);
+    cactus.position.set(x, world.groundHeightAt(x, z), z);
     cactus.rotation.y = rand(0, 6.3);
     world.scene.add(cactus); world.plants.push(cactus);
   }

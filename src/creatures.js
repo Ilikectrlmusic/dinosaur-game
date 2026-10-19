@@ -671,21 +671,22 @@ export function buildCactus(height = 1.8) {
   trunk.position.y = height / 2;
   trunk.castShadow = true;
   group.add(trunk);
-  const tip = height * 0.58;
+  const tip = height * 0.52;
   for (const s of [-1, 1]) {
-    const armHeight = height * (s === 1 ? 0.48 : 0.35);
+    const armHeight = height * (s === 1 ? 0.38 : 0.3);
+    const shoulder = tip + height * (s === 1 ? 0.03 : -0.05);
     segment(
       group,
       green,
-      [s * 0.12, tip + (s === 1 ? 0.14 : -0.1), 0],
-      [s * 0.5, tip + (s === 1 ? 0.14 : -0.1), 0],
+      [s * 0.12, shoulder, 0],
+      [s * 0.5, shoulder, 0],
       0.115,
     );
     const arm = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.115, armHeight - 0.2, 4, 10),
+      new THREE.CapsuleGeometry(0.115, armHeight - 0.23, 4, 10),
       green,
     );
-    arm.position.set(s * 0.5, tip + (s === 1 ? 0.14 : -0.1) + armHeight / 2, 0);
+    arm.position.set(s * 0.5, shoulder + armHeight / 2, 0);
     arm.castShadow = true;
     group.add(arm);
   }

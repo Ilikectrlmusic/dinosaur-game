@@ -7,7 +7,7 @@ import "@fontsource/inter/latin-600.css";
 import "@fontsource/inter/latin-700.css";
 import "./style.css";
 import * as THREE from "three";
-import { DesertWorld, rand } from "./world.js";
+import { DesertWorld } from "./world.js";
 import {
   buildDinosaur,
   animateDinosaur,
@@ -17,35 +17,22 @@ import {
 } from "./creatures.js";
 import { GameAudio } from "./audio.js";
 import { CrashPhysics } from "./physics.js";
-import { JUMP_VELOCITY, advanceJump, overlapsRunner } from "./rules.js";
+import {
+  CONFIG,
+  JUMP_VELOCITY,
+  BIRD_BOB,
+  BIRD_SPEED_BONUS,
+  advanceJump,
+  overlapsRunner,
+  speedAtTime,
+  chooseObstacle,
+  spawnDelay,
+} from "./rules.js";
 import { DragLook } from "./drag-look.js";
 import { DeathOverlay } from "./death-overlay.js";
 import { MobileInput } from "./mobile-input.js";
 
 const $ = (id) => document.getElementById(id);
-const CONFIG = {
-  easy: {
-    label: "EXPLORER",
-    speed: 10,
-    maxSpeed: 18,
-    gap: 2.7,
-    description: "放慢脚步，感受旷野",
-  },
-  normal: {
-    label: "ADVENTURER",
-    speed: 14,
-    maxSpeed: 24,
-    gap: 2.05,
-    description: "危机四伏，保持敏锐",
-  },
-  hard: {
-    label: "SURVIVOR",
-    speed: 19,
-    maxSpeed: 31,
-    gap: 1.55,
-    description: "野性全开，挑战你的极限",
-  },
-};
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem("saurian-preferences") || "{}");
@@ -315,26 +302,19 @@ function jump() {
   audio.jump();
   world.emitDust(state.x, 0, 12);
 }
-function spawnObstacle(type, z = -95) {
-  const bird = type === "bird";
-  const height =
-    state.difficulty === "hard" ? rand(1.45, 1.9) : rand(1.25, 1.65);
-  const object = bird ? buildPterosaur() : buildCactus(height);
-  object.userData = { ...object.userData, type, height, passed: false };
-  object.position.set(0, bird ? 3.55 : 0, z);
+function spawnObstacle(spec, z = -95) {
+  const bird = spec.type === "bird";
+  const object = bird ? buildPterosaur() : buildCactus(spec.height);
+  object.userData = { ...object.userData, ...spec, passed: false };
+  object.position.set(0, bird ? spec.flightHeight : 0, z);
   if (bird) object.rotation.y = Math.PI;
   world.scene.add(object);
   obstacles.push(object);
   return object;
 }
 function spawnWave() {
-  const bird = state.distance > 70 && Math.random() < 0.4;
-  // One obstacle at a time on a single track, with time to land before ducking.
-  spawnObstacle(bird ? "bird" : "cactus");
-  const birdAdvantage = 95 / state.speed - 95 / (state.speed + 2.5);
-  state.spawn =
-    Math.max(CONFIG[state.difficulty].gap, 1.25 + birdAdvantage) +
-    rand(0.2, 0.85);
+  spawnObstacle(chooseObstacle(state.distance));
+  state.spawn = spawnDelay(state.difficulty, state.speed);
 }
 function updateHUD() {
   $("distance").innerHTML =
@@ -370,7 +350,9 @@ function crash(obstacle) {
   $("new-best").classList.toggle("hidden", !isBest);
   $("death-reason").textContent =
     obstacle.userData.type === "bird"
-      ? "低空翼龙掠过了你的路线。下次留意天空，及时伏低身体。"
+      ? obstacle.userData.variant === "low"
+        ? "低飞翼龙挡住了去路。它贴近地面，需要提前起跳越过。"
+        : "高飞翼龙掠过骑手。它无法跳过，需要按住低头从下方穿过。"
       : "没能越过这片荆棘。下次接近仙人掌时，试着提前起跳。";
   // Register the transition first: optional animation/audio must never strand the UI.
   deathTimeout = setTimeout(() => finishCrash(generation), 2700);
@@ -403,8 +385,7 @@ function crash(obstacle) {
 }
 function updateGameplay(dt) {
   state.runTime += dt;
-  const c = CONFIG[state.difficulty];
-  state.speed = Math.min(c.maxSpeed, c.speed + state.runTime * 0.065);
+  state.speed = speedAtTime(state.difficulty, state.runTime);
   state.distance += state.speed * dt;
   state.x = 0;
   if (state.y > 0 || state.vy > 0) {
@@ -430,9 +411,10 @@ function updateGameplay(dt) {
   for (let i = obstacles.length - 1; i >= 0; i--) {
     const obstacle = obstacles[i],
       bird = obstacle.userData.type === "bird";
-    obstacle.position.z += (state.speed + (bird ? 2.5 : 0)) * dt;
+    obstacle.position.z += (state.speed + (bird ? BIRD_SPEED_BONUS : 0)) * dt;
     if (bird) {
-      obstacle.position.y = 3.55 + Math.sin(state.time * 2.2) * 0.12;
+      obstacle.position.y =
+        obstacle.userData.flightHeight + Math.sin(state.time * 2.2) * BIRD_BOB;
       obstacle.userData.wings.forEach(
         (w, j) =>
           (w.rotation.z = Math.sin(state.time * 6.5) * (j ? 1 : -1) * 0.43),
@@ -802,12 +784,14 @@ function init() {
             view: state.view,
             distance: state.distance,
             speed: state.speed,
+            runTime: state.runTime,
             y: state.y,
             duck: state.duck,
             x: state.x,
             sound: state.sound,
             obstacles: obstacles.map((o) => ({
               type: o.userData.type,
+              variant: o.userData.variant,
               x: o.position.x,
               y: o.position.y,
               z: o.position.z,

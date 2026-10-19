@@ -1473,13 +1473,13 @@ select {
     font-size: 23px;
   }
   .playing .view-control {
-    bottom: calc(var(--touch-bottom) + 72px);
+    bottom: calc(var(--touch-bottom) + 104px);
     right: 18px;
     background: #26352966;
     padding: 9px 12px;
   }
   .game-tip {
-    bottom: calc(var(--touch-bottom) + 125px);
+    bottom: calc(var(--touch-bottom) + 157px);
     font-size: 8px;
     gap: 7px;
     padding: 9px 12px;

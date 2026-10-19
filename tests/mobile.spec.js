@@ -88,10 +88,12 @@ test("mobile orbit keeps the rider centered; the single track has only jump and 
     const tip = document.getElementById("game-tip").getBoundingClientRect();
     const view = document.getElementById("view-control").getBoundingClientRect();
     const controls = document.getElementById("mobile-controls").getBoundingClientRect();
-    return { tipBottom: tip.bottom, viewTop: view.top, viewBottom: view.bottom, controlsTop: controls.top };
+    const hint = document.querySelector(".camera-drag-hint").getBoundingClientRect();
+    return { tipBottom: tip.bottom, viewTop: view.top, viewBottom: view.bottom, hintBottom: hint.bottom, controlsTop: controls.top };
   });
   expect(layout.tipBottom).toBeLessThan(layout.viewTop);
   expect(layout.viewBottom).toBeLessThan(layout.controlsTop);
+  expect(layout.controlsTop - layout.hintBottom).toBeGreaterThanOrEqual(24);
   await page.locator("#touch-jump").tap();
   await page.waitForFunction(() => window.__saurian.state.y > 0.1);
   await page.waitForFunction(() => window.__saurian.state.obstacles.length > 0);

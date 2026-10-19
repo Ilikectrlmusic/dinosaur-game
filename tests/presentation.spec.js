@@ -12,7 +12,7 @@ async function openControlledGame(page) {
   await page.route("**/src/world.js*", async (route) => {
     const response = await route.fetch();
     await route.fulfill({ response, body: (await response.text()).replace(
-      "this.distance = 0;", "this.distance = 0; window.__testWorld = this;",
+      "this.distance = 0;", "this.distance = 0; window.__testWorld = this; window.__testThree = THREE;",
     ) });
   });
   await page.addInitScript(() => localStorage.setItem(
@@ -57,7 +57,7 @@ async function playUntil(page, seconds) {
 for (const mobile of [false, true]) {
   test.describe(mobile ? "portrait phone" : "desktop", () => {
     test.use({ viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 800 }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 });
-    test("opening hints fade together without shifting the view control, and reset on a new run", async ({ page }) => {
+    test("surfaces stay aligned with plants while opening hints fade and reset without shifting the view control", async ({ page }) => {
       test.setTimeout(90000);
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
@@ -96,13 +96,43 @@ for (const mobile of [false, true]) {
         const tile = world.badlands.children[2];
         const point = tile.position.clone();
         tile.getWorldPosition(point);
-        return { distance: world.distance, position: point.toArray() };
+        const { Raycaster, Vector3 } = window.__testThree;
+        const sample = (width, x, z) => {
+          const mesh = world.scene.children.find((object) => object.isMesh && object.geometry.parameters?.width === width);
+          mesh.updateWorldMatrix(true, false);
+          const ray = new Raycaster(new Vector3(x, 100, z), new Vector3(0, -1, 0));
+          const hit = ray.intersectObject(mesh)[0];
+          const mapUV = (map) => {
+            const uv = hit.uv.clone();
+            map.updateMatrix();
+            return map.transformUv(uv).toArray();
+          };
+          return { color: mapUV(mesh.material.map), normal: mesh.material.normalMap ? mapUV(mesh.material.normalMap) : null };
+        };
+        window.__testPlantIndex ??= world.plants.findIndex((plant) => plant.position.z < -80);
+        const plant = world.plants[window.__testPlantIndex];
+        return {
+          distance: world.distance, position: point.toArray(), plantZ: plant.position.z,
+          ground: sample(650, plant.position.x, plant.position.z),
+          trail: sample(6, 0, -20 + world.distance),
+        };
       });
       const firstMountain = await worldPosition();
       await playUntil(page, 4.3);
       const nextMountain = await worldPosition();
       expect(nextMountain.position[2] - firstMountain.position[2]).toBeCloseTo(nextMountain.distance - firstMountain.distance, 8);
       expect(nextMountain.position[2]).toBeGreaterThan(firstMountain.position[2] + 40);
+      expect(nextMountain.plantZ - firstMountain.plantZ).toBeCloseTo(nextMountain.distance - firstMountain.distance, 6);
+      // A point moving with a plant must stay on the same surface texel.
+      // This checks the real plane UV orientation, not just the offset sign.
+      for (const surface of ["ground", "trail"]) for (const channel of ["color", "normal"]) {
+        const before = firstMountain[surface][channel], after = nextMountain[surface][channel];
+        if (!before) continue;
+        after.forEach((value, i) => {
+          const difference = Math.abs(value - before[i]);
+          expect(Math.min(difference, 1 - difference)).toBeLessThan(1e-5);
+        });
+      }
       await expect(page.locator("#game-tip")).toHaveCSS("opacity", "1");
       await expect(page.locator(".camera-drag-hint")).toHaveCSS("opacity", "1");
       await playUntil(page, 5.2);

@@ -270,8 +270,10 @@ export class DesertWorld {
   }
   update(dt, time, speed = 0, mountHeight = 0) {
     this.distance += speed * dt;
-    this.sand.offset.y = (-this.distance / 950) * this.sand.repeat.y;
-    this.roadTexture.offset.y = (-this.distance / 700) * 35;
+    // On these horizontal planes, V decreases toward +Z. Increasing the
+    // texture offset keeps surface details moving with the plants toward +Z.
+    this.sand.offset.y = (this.distance / 950) * this.sand.repeat.y;
+    this.roadTexture.offset.y = (this.distance / 700) * this.roadTexture.repeat.y;
     this.plants.forEach((p) => {
       p.position.z += speed * dt;
       if (p.position.z > 55) {

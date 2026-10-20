@@ -91,7 +91,7 @@ for (const mobile of [false, true]) {
         }
         await page.setViewportSize({ width: 1280, height: 800 });
       }
-      await expect(page.locator("#toast")).toHaveCSS("top", mobile ? "72px" : "32px");
+      await expect(page.locator("#toast")).toHaveCSS("top", mobile ? "72px" : "120px");
       await page.locator("#start-button").click();
       await page.clock.runFor(100);
       await expect(page.locator("#best")).toHaveText("321 M");

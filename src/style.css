@@ -347,15 +347,9 @@ h1 em {
 .mount-options {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   margin-top: 12px;
   height: 36px;
-}
-.mount-label {
-  font-size: 9px;
-  color: var(--muted);
-  margin-right: 2px;
-  flex-shrink: 0;
 }
 .mount-option {
   display: flex;
@@ -759,6 +753,11 @@ kbd {
   opacity: 1;
   transform: translate(-50%, 0);
 }
+@media (min-width: 701px) {
+  body:not(.playing) .toast {
+    top: 120px;
+  }
+}
 dialog {
   padding: 0;
   color: var(--cream);
@@ -1020,7 +1019,7 @@ select {
   text-align: center;
   color: #abb29e;
   font-size: 9px;
-  margin-top: 7px;
+  margin-top: 17px;
 }
 .death-shortcut kbd {
   margin-right: 5px;
@@ -1428,8 +1427,7 @@ select {
     margin-top: 9px;
     gap: 6px;
   }
-  .mount-options { height: 35px; margin-top: 10px; gap: 5px; }
-  .mount-label { font-size: 8px; }
+  .mount-options { height: 35px; margin-top: 10px; gap: 6px; }
   .mount-option { gap: 4px; padding: 0 4px; font-size: 9px; }
   .mount-option svg { width: 23px; height: 21px; }
   .start-button {
@@ -1567,7 +1565,6 @@ select {
     right: auto;
     height: 36px;
     z-index: 6;
-    background: #26352966;
     padding: 9px 12px;
   }
   .playing .camera-drag-hint {

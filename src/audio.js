@@ -3,7 +3,6 @@ export class GameAudio {
     this.enabled = true;
     this.volume = 0.55;
     this.context = null;
-    this.stepTimer = 0;
     this.flapTimer = 0;
   }
   report(error) {
@@ -170,9 +169,9 @@ export class GameAudio {
     this.tone(100, 0.28, "sine", 0.2, 215);
     this.noise(0.3, 0.22, 900);
   }
-  land() {
-    this.tone(55, 0.3, "sine", 0.4, 22);
-    this.noise(0.28, 0.4, 1000);
+  land(strength = 1) {
+    this.tone(55, 0.3, "sine", 0.4 * strength, 22);
+    this.noise(0.28, 0.4 * strength, 1000);
   }
   hit() {
     this.tone(70, 0.6, "sawtooth", 0.16, 22);
@@ -207,10 +206,5 @@ export class GameAudio {
         0.4,
       ),
     );
-    this.stepTimer -= dt;
-    if (running && !inAir && this.stepTimer <= 0) {
-      this.step();
-      this.stepTimer = 0.27 - Math.min(0.08, speed * 0.002);
-    }
   }
 }

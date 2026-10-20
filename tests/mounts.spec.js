@@ -73,6 +73,64 @@ test("mount selection survives rider changes, reload, retry and camp without ove
   expect(errors).toEqual([]);
 });
 
+test("every mount rolls its feet without sinking and lands one foot at a time with the rider seated", async ({ page }) => {
+  await openGame(page);
+  const results = await page.evaluate(async () => {
+    const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
+    const { MOUNTS } = await import("/src/mounts.js");
+    const { advanceJump, JUMP_VELOCITY } = await import("/src/rules.js");
+    const source = await (await fetch("/src/main.js")).text();
+    const { Box3, Vector3 } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
+    const results = [];
+    for (const [index, mount] of MOUNTS.entries()) for (const fps of [30, 60, 120]) {
+      const dino = buildDinosaur(index, mount.id), dt = 1 / fps;
+      const bounds = new Box3(), point = new Vector3(), seat = new Vector3();
+      let y = 0, vy = 0, baseline, seatError = 0, reinError = 0;
+      let minClearance = Infinity, maxClearance = -Infinity, minPitch = Infinity, maxPitch = -Infinity;
+      const landings = [];
+      for (let frame = 0; frame < fps * 2; frame++) {
+        if (frame === Math.round(fps * 0.3)) vy = JUMP_VELOCITY;
+        const jump = advanceJump(y, vy, dt);
+        y = jump.y; vy = jump.vy;
+        dino.root.position.y = y;
+        animateDinosaur(dino, frame * dt, 1, 0, y, dt, 0, vy);
+        const pose = dino.gait.pose;
+        if (pose.landingContacts) landings.push({ time: frame * dt, mask: pose.landingContacts });
+        for (const [i, leg] of dino.legs.entries()) {
+          const clearance = bounds.setFromObject(leg.foot, true).min.y - y - pose.legs[i].lift;
+          minClearance = Math.min(minClearance, clearance);
+          maxClearance = Math.max(maxClearance, clearance);
+          if (pose.mode === "running") {
+            const pitch = leg.hip.rotation.x + leg.foot.rotation.x;
+            minPitch = Math.min(minPitch, pitch); maxPitch = Math.max(maxPitch, pitch);
+          }
+        }
+        dino.saddle.worldToLocal(dino.rider.pelvis.getWorldPosition(seat));
+        baseline ??= seat.clone();
+        seatError = Math.max(seatError, seat.distanceTo(baseline));
+        for (let i = 0; i < 2; i++) {
+          dino.root.worldToLocal(dino.rider.limbs[i].hand.getWorldPosition(point));
+          reinError = Math.max(reinError, point.distanceTo(dino.reins[i].points[0]));
+        }
+      }
+      results.push({ mount: mount.id, fps, minClearance, maxClearance, minPitch, maxPitch, seatError, reinError, landings });
+    }
+    return results;
+  });
+  expect(results).toHaveLength(9);
+  for (const result of results) {
+    expect(result.minClearance, JSON.stringify(result)).toBeGreaterThan(0.002);
+    expect(result.maxClearance, JSON.stringify(result)).toBeLessThan(0.004);
+    expect(result.minPitch).toBeLessThan(-0.49);
+    expect(result.maxPitch).toBeGreaterThan(0.17);
+    expect(result.seatError).toBeLessThan(1e-8);
+    expect(result.reinError).toBeLessThan(1e-8);
+    expect(result.landings).toHaveLength(2);
+    expect(result.landings[0].mask).not.toBe(result.landings[1].mask);
+    expect(Math.abs(result.landings[1].time - result.landings[0].time - 0.14)).toBeLessThanOrEqual(1 / result.fps + 1e-9);
+  }
+});
+
 test("all species keep the saddle and reins connected, clear visible cactus gaps, breathe from the mouth and settle after a crash", async ({ page }) => {
   test.setTimeout(90000);
   await openGame(page);

@@ -130,7 +130,9 @@ test("all riders bend at the hips without leaving the saddle or moving their leg
       dino.root.position.set(1, 2, -3);
       dino.root.rotation.y = 0.3;
       for (const duck of [0, 0.25, 0.5, 0.75, 1, 0]) {
-        animateDinosaur(dino, 1.2, 1, duck);
+        // Compare duck poses at one frozen stride phase. Advancing the gait
+        // would otherwise change the standing head height between samples.
+        animateDinosaur(dino, 1.2, 1, duck, 0, 0);
         dino.root.updateMatrixWorld(true);
         const rider = dino.rider;
         const seat = dino.saddle.worldToLocal(

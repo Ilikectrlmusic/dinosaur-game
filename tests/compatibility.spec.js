@@ -25,12 +25,23 @@ test("a visible gap above every cactus remains safe through the animated jump po
   await openGame(page);
   const cases = await page.evaluate(async () => {
     const { buildDinosaur, animateDinosaur, cactusContactBounds } = await import("/src/creatures.js");
-    const { overlapsRunner, CACTUS_HEIGHTS } = await import("/src/rules.js");
+    const { overlapsRunner, CACTUS_HEIGHTS, JUMP_VELOCITY, GRAVITY } = await import("/src/rules.js");
+    const { DinosaurGait } = await import("/src/dinosaur-gait.js");
     const dino = buildDinosaur();
     const cases = [];
-    for (const height of Object.values(CACTUS_HEIGHTS)) for (const time of [0, .15, .3, .5, .7]) {
-      dino.root.position.y = 1;
-      animateDinosaur(dino, time, 1, 0, 1);
+    for (const height of Object.values(CACTUS_HEIGHTS)) for (const time of [0, .1, .25, .5, .75, .9, 1.05]) {
+      // Advance through the actual takeoff, tuck, reach and recovery rather
+      // than assuming a single height immediately selects a fixed flight pose.
+      dino.gait = new DinosaurGait();
+      dino.root.position.y = 0;
+      animateDinosaur(dino, 0, 1, 0, 0, 1 / 120, 0, 0);
+      for (let frame = 1; frame <= Math.round(time * 120); frame++) {
+        const age = frame / 120;
+        const y = Math.max(0, JUMP_VELOCITY * age - GRAVITY * age * age / 2);
+        const velocity = y > 0 ? JUMP_VELOCITY - GRAVITY * age : 0;
+        dino.root.position.y = y;
+        animateDinosaur(dino, age, 1, 0, y, 1 / 120, 0, velocity);
+      }
       const bottom = Math.min(...cactusContactBounds(dino).map((box) => box.min.y));
       dino.root.position.y += height + .01 - bottom;
       let bounds = cactusContactBounds(dino);
@@ -45,8 +56,10 @@ test("a visible gap above every cactus remains safe through the animated jump po
     }
     return cases;
   });
-  expect(cases).toHaveLength(15);
-  for (const result of cases) expect(result, JSON.stringify(cases)).toMatchObject({ clear: true, legacyWouldCollide: true, touches: true });
+  expect(cases).toHaveLength(21);
+  for (const result of cases) expect(result, JSON.stringify(cases)).toMatchObject({ clear: true, touches: true });
+  for (const height of [1.05, 1.55, 2.05])
+    expect(cases.some((result) => result.height === height && result.legacyWouldCollide)).toBe(true);
 });
 
 test("bottom-region swipes orbit without jumping or ducking, while taps and stationary holds still work", async ({ page }) => {

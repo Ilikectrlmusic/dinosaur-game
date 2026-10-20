@@ -110,7 +110,6 @@ const targetCamera = new THREE.Vector3(),
   pitchRotation = new THREE.Quaternion(),
   lookEuler = new THREE.Euler(0, 0, 0, "YXZ"),
   riderScreen = new THREE.Vector3();
-let previousStep = 0;
 function releaseModel(root) {
   const geometries = new Set(),
     materials = new Set();
@@ -306,7 +305,6 @@ function startGame() {
     " <small>M</small>";
   updateHUD();
   persist();
-  previousStep = 0;
 }
 function goHome() {
   if (["running", "paused"].includes(state.mode))
@@ -439,10 +437,6 @@ function updateGameplay(dt) {
     const jumpStep = advanceJump(state.y, state.vy, dt);
     state.y = jumpStep.y;
     state.vy = jumpStep.vy;
-    if (jumpStep.landed) {
-      audio.land();
-      world.emitDust(state.x, 0, 15);
-    }
   }
   state.duck = THREE.MathUtils.damp(
     state.duck,
@@ -452,7 +446,7 @@ function updateGameplay(dt) {
   );
   dino.root.position.set(state.x, state.y, 0);
   dino.root.rotation.z = THREE.MathUtils.damp(dino.root.rotation.z, 0, 8, dt);
-  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength);
+  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength, state.vy);
   fire.update(dt, dino.head, state.speed);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
@@ -499,11 +493,15 @@ function updateGameplay(dt) {
     }
   }
   if (state.mode !== "running") return;
-  const step = Math.floor(state.time * 3.1);
-  if (step !== previousStep && state.y < 0.1) {
-    world.emitDust(state.x + (step % 2 ? 0.5 : -0.5), 0.35, 4);
-    previousStep = step;
-  }
+  const { contacts, landingContacts } = dino.gait.pose;
+  dino.legs.forEach((leg, i) => {
+    if (!(contacts & (1 << i))) return;
+    leg.foot.getWorldPosition(dino.contactPosition);
+    const landing = landingContacts & (1 << i);
+    world.emitDust(dino.contactPosition.x, dino.contactPosition.z, landing ? 10 : 4);
+    if (landing) audio.land(i === dino.gait.lead ? 1 : 0.55);
+    else audio.step();
+  });
   const milestone = Math.floor(state.distance / 1000);
   if (milestone > state.milestone) {
     state.milestone = milestone;

@@ -302,12 +302,20 @@
           <option value="high">高画质</option>
           <option value="low">流畅</option>
         </select></label
+      ><label class="setting-row desktop-setting"
+        ><span
+          ><b>性能偏好</b><small id="performance-description">由浏览器和系统自动选择显卡；更改后需重新加载</small></span
+        ><select id="performance-setting" aria-describedby="performance-description">
+          <option value="default">自动</option>
+          <option value="high-performance">高性能</option>
+          <option value="low-power">低性能</option>
+        </select></label
       ><label class="setting-row"
         ><span><b>动态镜头</b><small>奔跑时的轻微镜头起伏</small></span
         ><input id="motion-setting" type="checkbox" checked /><span
           class="switch"
         ></span></label
-      ><button class="secondary-button modal-close-action">
+      ><button id="settings-save" class="secondary-button modal-close-action">
         保存并返回 ↗
       </button>
     </dialog>

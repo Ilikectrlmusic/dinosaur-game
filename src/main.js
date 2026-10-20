@@ -38,6 +38,11 @@ import { FireBreath } from "./fire-breath.js";
 import { mountDefinition } from "./mounts.js";
 
 const $ = (id) => document.getElementById(id);
+const PERFORMANCE_PREFERENCES = {
+  default: "由浏览器和系统自动选择显卡",
+  "high-performance": "优先尝试独立显卡，实际由浏览器和系统决定",
+  "low-power": "优先尝试集成显卡，实际由浏览器和系统决定",
+};
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem("saurian-preferences") || "{}");
@@ -65,9 +70,12 @@ const state = {
   motion:
     saved.motion ?? !matchMedia("(prefers-reduced-motion: reduce)").matches,
   quality: saved.quality || "high",
+  powerPreference: Object.hasOwn(PERFORMANCE_PREFERENCES, saved.powerPreference)
+    ? saved.powerPreference : "default",
   sound: saved.sound !== false,
   volume: saved.volume ?? 0.55,
 };
+const startupPowerPreference = state.powerPreference;
 const audio = new GameAudio();
 audio.setEnabled(state.sound);
 audio.setVolume(state.volume);
@@ -132,6 +140,7 @@ function persist() {
         volume: state.volume,
         motion: state.motion,
         quality: state.quality,
+        powerPreference: state.powerPreference,
       }),
     );
   } catch {
@@ -174,8 +183,17 @@ function updateSelection() {
   $("audio-setting").checked = state.sound;
   $("volume-setting").value = state.volume * 100;
   $("quality-setting").value = state.quality;
+  updatePerformanceSetting();
   $("motion-setting").checked = state.motion;
   updateCampBest();
+}
+function updatePerformanceSetting() {
+  const pending = state.powerPreference !== startupPowerPreference;
+  $("performance-setting").value = state.powerPreference;
+  $("performance-description").textContent =
+    PERFORMANCE_PREFERENCES[state.powerPreference] +
+    (pending ? "；保存并重新加载后生效" : "；更改后需重新加载");
+  $("settings-save").textContent = pending ? "保存并重新加载 ↗" : "保存并返回 ↗";
 }
 function updateCampBest() {
   $("camp-best").innerHTML = Math.floor(state.best[state.difficulty] || 0) + "<small> M</small>";
@@ -712,6 +730,14 @@ function bindUI() {
     applyQuality();
     persist();
   });
+  $("performance-setting").addEventListener("change", (e) => {
+    state.powerPreference = e.target.value;
+    updatePerformanceSetting();
+    persist();
+  });
+  $("settings-save").addEventListener("click", () => {
+    if (state.powerPreference !== startupPowerPreference) window.location.reload();
+  });
   window.addEventListener("keydown", (e) => {
     if (e.target.matches("input,select")) return;
     const key = e.key.toLowerCase();
@@ -791,7 +817,7 @@ function init() {
   try {
     renderer = new THREE.WebGLRenderer({
       antialias: state.quality === "high",
-      powerPreference: "high-performance",
+      powerPreference: innerWidth > 700 ? startupPowerPreference : "high-performance",
     });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setClearColor("#b6ac91");

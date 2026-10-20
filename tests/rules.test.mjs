@@ -71,13 +71,18 @@ test("low birds require jumping and high birds require ducking, including both e
   }
 });
 
-test("birds and triple cacti unlock in stages after the opening cactus jumps", () => {
+test("all single cactus heights can appear from the start; birds and triples unlock later", () => {
   let seed = 7321;
   const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-  for (const distance of [0, 40, BIRD_UNLOCK_DISTANCE - 0.01]) for (let i = 0; i < 100; i++) {
-    const obstacle = chooseObstacle(distance, random);
-    assert.equal(obstacle.type, "cactus");
-    assert.notEqual(obstacle.variant, "triple");
+  for (const distance of [0, 40, BIRD_UNLOCK_DISTANCE - 0.01]) {
+    const heights = new Set();
+    for (let i = 0; i < 100; i++) {
+      const obstacle = chooseObstacle(distance, random);
+      assert.equal(obstacle.type, "cactus");
+      assert.notEqual(obstacle.variant, "triple");
+      heights.add(obstacle.height);
+    }
+    assert.deepEqual([...heights].sort(), Object.values(CACTUS_HEIGHTS).sort());
   }
   assert.equal(chooseObstacle(BIRD_UNLOCK_DISTANCE, () => 0).type, "bird");
   const middle = new Set();

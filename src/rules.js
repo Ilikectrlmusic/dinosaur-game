@@ -71,6 +71,7 @@ export function chooseObstacle(distance, random = Math.random) {
       members: heights.map((height, i) => ({ x: 0, z: i ? -i * CACTUS_CLUSTER_SPACING : 0, height })),
     };
   }
+  // Every single-cactus height is available from the first wave.
   const variants = Object.keys(CACTUS_HEIGHTS);
   const variant = variants[Math.floor(random() * variants.length)];
   return { type: "cactus", variant, height: CACTUS_HEIGHTS[variant] };

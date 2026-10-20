@@ -433,8 +433,7 @@ function crash(obstacle) {
 }
 function updateGameplay(dt) {
   state.runTime += dt;
-  state.speed = speedAtTime(state.difficulty, state.runTime);
-  state.distance += state.speed * dt;
+  const cruisingSpeed = speedAtTime(state.difficulty, state.runTime);
   state.x = 0;
   if (state.y > 0 || state.vy > 0) {
     const jumpStep = advanceJump(state.y, state.vy, dt);
@@ -449,7 +448,9 @@ function updateGameplay(dt) {
   );
   dino.root.position.set(state.x, state.y, 0);
   dino.root.rotation.z = THREE.MathUtils.damp(dino.root.rotation.z, 0, 8, dt);
-  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength, state.vy, state.speed);
+  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength, state.vy, cruisingSpeed);
+  state.speed = cruisingSpeed * dino.gait.pose.speedScale;
+  state.distance += state.speed * dt;
   fire.update(dt, dino.head, state.speed);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
@@ -598,6 +599,7 @@ function frame(now) {
     return;
   }
   state.time += dt;
+  const distanceBefore = state.distance;
   if (state.mode === "running") {
     let remaining = dt;
     while (remaining > 0 && state.mode === "running") {
@@ -624,7 +626,9 @@ function frame(now) {
   }
   if (state.mode === "dead") return;
   const speed = state.mode === "running" ? state.speed : 0;
-  world.update(dt, state.time, speed, state.y);
+  // The same integrated travel drives plants, ground textures and obstacles,
+  // even when a slow rendered frame contains several landing physics steps.
+  world.update(dt, state.time, (state.distance - distanceBefore) / dt, state.y);
   audio.update(dt, speed, state.mode === "running", state.y > 0.1);
   updateCamera(dt);
   if (renderBudget.sample(dt)) {
@@ -887,6 +891,7 @@ function init() {
             view: state.view,
             distance: state.distance,
             speed: state.speed,
+            travelScale: dino.gait.pose.speedScale,
             runTime: state.runTime,
             y: state.y,
             duck: state.duck,

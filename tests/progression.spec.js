@@ -42,7 +42,7 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
       body: source.replaceAll(
         "renderer.render(world.scene, camera);",
         "if (!window.__skipGraphics) renderer.render(world.scene, camera);",
-      ),
+      ).replace("// A small read-only diagnostic surface", "window.__progressionWorld = world; // A small read-only diagnostic surface"),
     });
   });
   await page.addInitScript(() => localStorage.setItem(
@@ -87,6 +87,8 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
     let ducking = false, failure = null, pauseChecked = false, switchedToFirst = false;
     const activeBursts = new Set(), captured = new Set();
     let previousMilestone = 0;
+    let slowSamples = 0;
+    const worldStart = await page.evaluate(() => window.__progressionWorld.distance);
     let state = await page.evaluate(() => window.__saurian.state);
     expect(state.mount).toBe(mount);
     while (state.distance < (failOn ? 2600 : 2250)) {
@@ -114,6 +116,11 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
         expect(failure, `unexpected collision: ${JSON.stringify(state)}`).toBeTruthy();
         break;
       }
+      expect(state.travelScale).toBeGreaterThanOrEqual(0.86);
+      expect(state.travelScale).toBeLessThanOrEqual(1);
+      expect(state.speed).toBeCloseTo(speedAtTime(difficulty, state.runTime) * state.travelScale, 8);
+      if (state.travelScale < 0.95) slowSamples++;
+      expect(await page.evaluate(() => window.__progressionWorld.distance) - worldStart).toBeCloseTo(state.distance, 7);
       expect(state.fire.bursts).toBe(Math.floor(state.distance / 1000));
       if (state.milestone > previousMilestone) {
         await expect(page.locator("#distance")).toHaveClass(/milestone-flash/);
@@ -144,7 +151,7 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
         state = await page.evaluate(() => window.__saurian.state);
       }
       if (speeds.length === 0 || state.runTime > speeds.at(-1).time + 10)
-        speeds.push({ time: state.runTime, speed: state.speed });
+        speeds.push({ time: state.runTime, speed: state.speed / state.travelScale });
       if (!pauseChecked && state.runTime > 10) {
         await page.locator("#pause-button").tap();
         const before = await page.evaluate(() => window.__saurian.state);
@@ -160,7 +167,8 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
     expect(speeds[2].speed).toBeGreaterThan(speeds[1].speed);
     expect(speeds.at(-1).speed).toBeLessThanOrEqual(CONFIG[difficulty].maxSpeed);
     expect(speeds.at(-1).speed).toBeGreaterThan(CONFIG[difficulty].speed + 8);
-    expect(state.speed).toBeCloseTo(speedAtTime(difficulty, state.runTime), 8);
+    expect(slowSamples).toBeGreaterThan(20);
+    expect(state.speed).toBeCloseTo(speedAtTime(difficulty, state.runTime) * state.travelScale, 8);
     expect([...activeBursts]).toEqual([1, 2]);
     if (difficulty === "easy") expect([...captured]).toEqual([1, 2]);
     await page.keyboard.up("ArrowDown");

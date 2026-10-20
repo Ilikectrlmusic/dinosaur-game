@@ -253,3 +253,48 @@ test("all species keep the saddle and reins connected, clear visible cactus gaps
   expect(dilo.headProportions[1]).toBeGreaterThan(allo.headProportions[1] * 1.15);
   expect(dilo.headProportions[2]).toBeGreaterThan(allo.headProportions[2] * 1.1);
 });
+
+test("tail ridge bases stay embedded in the animated skin for all mounts", async ({ page }) => {
+  await openGame(page);
+  const results = await page.evaluate(async () => {
+    const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
+    const { MOUNTS } = await import("/src/mounts.js");
+    const source = await (await fetch("/src/main.js")).text();
+    const { Raycaster, Vector3, Matrix3 } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
+    return MOUNTS.map((mount) => {
+      const dino = buildDinosaur(0, mount.id), ray = new Raycaster(), normalMatrix = new Matrix3();
+      const skins = dino.tail.map((joint) => joint.children.find((mesh) => mesh.name === "tail-skin"));
+      let samples = 0, misses = 0, maxGap = -Infinity;
+      for (let frame = 0; frame < 160; frame++) {
+        const age = frame / 60;
+        const height = frame >= 30 && frame < 85 ? Math.max(0, 10.5 * (age - 0.5) - 11 * (age - 0.5) ** 2) : 0;
+        dino.root.position.y = height;
+        animateDinosaur(dino, age, 1, frame > 120 ? 1 : 0, height, 1 / 60, 0, height ? 10.5 - 22 * (age - 0.5) : 0);
+        dino.root.updateMatrixWorld(true);
+        if (frame % 8) continue;
+        for (const joint of dino.tail) for (const mesh of joint.children) {
+          if (!mesh.isMesh || mesh.name === "tail-skin") continue;
+          normalMatrix.getNormalMatrix(mesh.matrixWorld);
+          const positions = mesh.geometry.attributes.position, normals = mesh.geometry.attributes.normal;
+          for (let i = 0; i < positions.count; i++) {
+            if (normals.getY(i) > -0.9) continue; // actual underside of each plate
+            const point = new Vector3().fromBufferAttribute(positions, i).applyMatrix4(mesh.matrixWorld);
+            const down = new Vector3().fromBufferAttribute(normals, i).applyMatrix3(normalMatrix).normalize();
+            ray.set(point.addScaledVector(down, -0.2), down);
+            const hit = ray.intersectObjects(skins, false)[0];
+            samples++;
+            if (!hit) misses++;
+            else maxGap = Math.max(maxGap, hit.distance - 0.2);
+          }
+        }
+      }
+      return { mount: mount.id, samples, misses, maxGap };
+    });
+  });
+  for (const result of results) {
+    expect(result.samples).toBeGreaterThan(1000);
+    expect(result.misses, JSON.stringify(result)).toBe(0);
+    expect(result.maxGap, JSON.stringify(result)).toBeLessThan(-0.005);
+    expect(result.maxGap).toBeGreaterThan(-0.04);
+  }
+});

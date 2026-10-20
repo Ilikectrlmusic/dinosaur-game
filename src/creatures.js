@@ -629,7 +629,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     });
   }
   // Articulated tapering tail with a slight natural curve.
-  const tail = [];
+  const tail = [], tailSurfaces = [];
   let parent = root;
   for (let i = 0; i < 8; i++) {
     const joint = new THREE.Group();
@@ -641,22 +641,40 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     parent.add(joint);
     const r = 0.43 * (1 - i / 8),
       next = Math.max(0.012, 0.43 * (1 - (i + 1) / 8));
-    anatomicalPart(joint, [[0, 0, r, r * 0.9], [0.25, -0.005, (r + next) / 2, (r + next) * 0.45], [0.53, -0.01, next, next * 0.9]], skin, i * 0.53);
+    const surface = anatomicalPart(joint, [[0, 0, r, r * 0.9], [0.25, -0.005, (r + next) / 2, (r + next) * 0.45], [0.53, -0.01, next, next * 0.9]], skin, i * 0.53);
+    surface.name = "tail-skin";
+    tailSurfaces.push(surface);
     joint.rotation.x = -0.05;
     tail.push(joint);
     parent = joint;
   }
   // Bony ridges, subtle rather than fantasy spikes.
+  root.updateMatrixWorld(true);
+  const ridgeRay = new THREE.Raycaster(), ridgeUp = new THREE.Vector3(0, 1, 0);
   for (let i = 0; i < 16; i++) {
     const z = -0.7 + i * 0.28,
       y = 2.56 - Math.max(0, z - 0.7) * 0.12;
     const ridge = new THREE.Mesh(cone, horn);
     ridge.scale.set(0.065, 0.13 * (1 - i / 20), 0.12);
-    ridge.position.set(0, y, z);
-    ridge.rotation.x = 0.25;
-    root.add(ridge);
-    if (z < 1.08) body.attach(ridge);
-    else tail[Math.min(7, Math.floor((z - 1.08) / 0.49))].attach(ridge);
+    if (z < 1.08) {
+      ridge.position.set(0, y, z);
+      ridge.rotation.x = 0.25;
+      root.add(ridge);
+      body.attach(ridge);
+    } else {
+      // Anchor in each segment's own frame on the actual tapered mesh, with
+      // the base slightly embedded. World-height placement left floating
+      // plates above the tail root, even though their parents were correct.
+      const index = Math.floor((i - 7) / 2), joint = tail[index];
+      const localZ = 0.14 + ((i - 7) % 2) * 0.245;
+      ridgeRay.set(joint.localToWorld(new THREE.Vector3(0, 2, localZ)),
+        new THREE.Vector3(0, -1, 0).transformDirection(joint.matrixWorld));
+      const hit = ridgeRay.intersectObject(tailSurfaces[index], false)[0];
+      ridge.position.copy(joint.worldToLocal(hit.point));
+      ridge.position.addScaledVector(hit.face.normal, ridge.scale.y / 2 - 0.025);
+      ridge.quaternion.setFromUnitVectors(ridgeUp, hit.face.normal);
+      joint.add(ridge);
+    }
   }
   const saddle = new THREE.Group();
   saddle.position.copy(saddleAnchor);
@@ -782,8 +800,10 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
     // Keep a small knee bend rather than locking the joint at full reach.
     const extendedHeight = hipHeight - Math.sqrt(Math.max(0,
       (leg.thighLength + leg.shinLength - 0.012) ** 2 - pose.z ** 2));
+    // In flight the floor is below the moving root. Clamping to the root's
+    // original floor would bend the knees as straight legs pass underneath.
     const ankleHeight = THREE.MathUtils.lerp(support + pose.lift,
-      Math.max(support, extendedHeight), pose.extension);
+      Math.max(support - jump / dino.sizeScale, extendedHeight), pose.extension);
     pose.lift = ankleHeight - support;
     const joint = solveLeg(hipHeight,
       ankleHeight, pose.z, leg.thighLength, leg.shinLength, leg.thighRestAngle);

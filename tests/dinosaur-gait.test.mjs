@@ -138,3 +138,65 @@ test("touchdown eases into compression instead of dropping the body in the first
     assert.ok(gait.pose.drop - before < 1.5 * dt);
   }
 });
+
+test("takeoff finishes behind the hips and straight legs sweep forward during flight", () => {
+  for (const fps of [30, 60, 120, 144]) for (const offset of [0, 0.13, 0.29, 0.48]) {
+    const gait = new DinosaurGait(), dt = 1 / fps;
+    gait.update(offset, 1, 0, dt, 0);
+    let y = 0, vy = JUMP_VELOCITY, previous, backSamples = 0, frontSamples = 0;
+    for (let frame = 1; frame * dt < 0.75; frame++) {
+      ({ y, vy } = advanceJump(y, vy, dt));
+      const pose = gait.update(offset + frame * dt, 1, y, dt, vy);
+      if (frame * dt >= 0.18) {
+        for (let i = 0; i < 2; i++) {
+          assert.equal(pose.legs[i].extension, 1, "both knees stay extended while sweeping");
+          if (previous) assert.ok(pose.legs[i].z <= previous[i] + 1e-9, "legs sweep forward without reversing");
+          if (frame * dt < 0.28) {
+            assert.ok(pose.legs[i].z > 0.5, "takeoff ends with the ankles behind the hips");
+            backSamples++;
+          }
+          if (frame * dt > 0.65) {
+            assert.ok(pose.legs[i].z < -0.9, "legs reach forward before preparing to land");
+            frontSamples++;
+          }
+        }
+        previous = pose.legs.map((leg) => leg.z);
+      }
+    }
+    assert.ok(backSamples && frontSamples);
+  }
+});
+
+test("landing briefly reduces travel, smoothly recovers, and cannot be cancelled by re-jumping", () => {
+  const losses = [];
+  for (const fps of [30, 60, 120, 144]) {
+    const gait = new DinosaurGait(), dt = 1 / fps;
+    gait.update(0, 1, 0, dt, 0);
+    gait.update(0.9, 1, 0.01, dt, -10);
+    assert.equal(gait.pose.speedScale, 1);
+    gait.update(1, 1, 0, dt, 0);
+    let loss = 0, min = 1, previous = 1;
+    for (let frame = 1; frame <= fps; frame++) {
+      const age = frame * dt;
+      const { speedScale } = gait.update(1 + age, 1, 0, dt, 0);
+      assert.ok(speedScale >= 0.86 && speedScale <= 1);
+      assert.ok(Math.abs(speedScale - previous) < 4 * dt, "no instant momentum changes");
+      if (age > 0.1) assert.ok(speedScale >= previous, "speed recovers steadily after compression");
+      if (age >= 0.55) assert.equal(speedScale, 1);
+      loss += 14 * (1 - speedScale) * dt;
+      min = Math.min(min, speedScale); previous = speedScale;
+    }
+    assert.ok(min < 0.87);
+    assert.ok(loss > 0.5 && loss < 0.65, "the brief slowdown remains subtle");
+    losses.push(loss);
+    gait.update(3, 1, 0.01, dt, -10);
+    gait.update(3 + dt, 1, 0, dt, 0);
+    for (let age = 0; age < 0.08; age += dt) gait.update(3.1, 1, 0, dt, 0);
+    const before = gait.pose.speedScale;
+    gait.update(3.2, 1, 0.1, dt, 10);
+    assert.ok(gait.pose.speedScale < 0.9 && Math.abs(gait.pose.speedScale - before) < 0.01);
+    gait.update(4, 0, 0, dt, 0);
+    assert.equal(gait.pose.speedScale, 1, "returning to camp clears momentum recovery");
+  }
+  assert.ok(Math.max(...losses) - Math.min(...losses) < 0.005, "travel loss is stable across frame rates");
+});

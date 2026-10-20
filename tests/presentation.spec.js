@@ -184,8 +184,7 @@ for (const mobile of [false, true]) {
             const view = document.getElementById("view-control").getBoundingClientRect();
             const footer = document.getElementById("footer").getBoundingClientRect();
             const hint = document.querySelector(".camera-drag-hint").getBoundingClientRect();
-            const controls = document.querySelector(".controls-hint").getBoundingClientRect();
-            return { borderGap: view.top - footer.top, edgeGap: innerHeight - hint.bottom, textGap: hint.left - controls.right };
+            return { borderGap: view.top - footer.top, edgeGap: innerHeight - hint.bottom, textGap: view.left - hint.right };
           });
           expect(camp.borderGap).toBeGreaterThanOrEqual(4);
           expect(camp.edgeGap).toBeGreaterThanOrEqual(6);
@@ -205,7 +204,7 @@ for (const mobile of [false, true]) {
       await expect(page.locator("#best")).toHaveText("321 M");
       expect(await page.locator("#distance").innerText()).toMatch(/^(0|[1-9]\d*) M$/);
       const opening = await layout(page);
-      expect(opening.tipBottom).toBe(mobile ? 104 : 39);
+      expect(opening.tipBottom).toBe(mobile ? 112 : 39);
       expect(Math.abs(opening.tipCenterOffset)).toBeLessThan(0.5);
       expect(opening.viewAnchor).toBe(mobile ? 72 : 32);
       if (mobile) {

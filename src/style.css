@@ -10,7 +10,8 @@
   --orange: #ee9564;
   --line: rgba(243, 237, 223, 0.2);
   --display: "Barlow Condensed", Impact, sans-serif;
-  --touch-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  --touch-bottom: calc(max(20px, env(safe-area-inset-bottom, 0px)) + 8px);
+  --touch-inset: clamp(32px, 9vw, 48px);
   --mobile-status-top: 72px;
 }
 * {
@@ -175,9 +176,21 @@ button:disabled {
   text-decoration: none;
 }
 #original-game .original-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
+}
+#original-game .original-label svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .header-tools {
   display: flex;
@@ -1134,15 +1147,15 @@ select {
 .mobile-controls .touch-icon {
   position: absolute;
   bottom: var(--touch-bottom);
-  left: 20px;
+  left: max(var(--touch-inset), env(safe-area-inset-left, 0px));
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: 64px;
+  height: 64px;
   border: 1px solid #f3eddf55;
   background: #25382b80;
   border-radius: 50%;
-  font-size: 25px;
+  font-size: 28px;
   backdrop-filter: blur(10px);
 }
 .mobile-controls button.is-held .touch-icon {
@@ -1151,7 +1164,7 @@ select {
 }
 .mobile-controls button:last-child .touch-icon {
   left: auto;
-  right: 20px;
+  right: max(var(--touch-inset), env(safe-area-inset-right, 0px));
   background: #ee9564cc;
   color: #293326;
 }
@@ -1335,7 +1348,8 @@ select {
     display: none;
   }
   .header {
-    height: 80px;
+    height: calc(64px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
     gap: 15px;
   }
   .brand {
@@ -1353,9 +1367,9 @@ select {
   }
   .navigation {
     position: absolute;
-    top: 80px;
+    top: calc(64px + env(safe-area-inset-top, 0px));
     left: 5%;
-    height: 37px;
+    height: 30px;
     gap: 23px;
   }
   .nav-button {
@@ -1376,10 +1390,10 @@ select {
     width: 23px;
   }
   .menu {
-    top: 18%;
+    top: calc(108px + env(safe-area-inset-top, 0px));
     left: 5%;
     width: 90%;
-    bottom: 85px;
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -1394,9 +1408,9 @@ select {
     gap: 7px;
   }
   h1 {
-    font-size: 72px;
+    font-size: 64px;
     line-height: 0.89;
-    margin: 16px 0 13px;
+    margin: 10px 0 8px;
     letter-spacing: -0.8px;
   }
   .intro-text {
@@ -1466,9 +1480,7 @@ select {
     margin-top: 10px;
   }
   .world-label {
-    right: 5%;
-    top: 39%;
-    gap: 6px;
+    display: none;
   }
   .world-label strong {
     font-size: 18px;
@@ -1496,14 +1508,12 @@ select {
     left: 5%;
     right: 5%;
     border-top: 1px solid #f3eddf30;
-    height: calc(55px + env(safe-area-inset-bottom, 0px));
+    height: calc(44px + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
     justify-content: flex-start;
   }
   .controls-hint {
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: center;
+    display: none;
   }
   .controls-hint > span {
     font-size: 7px;
@@ -1515,11 +1525,19 @@ select {
     min-width: 17px;
   }
   .view-control {
-    bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     right: 5%;
     gap: 7px;
     border-bottom: 0;
     padding: 0;
+  }
+  body:not(.playing) .camera-drag-hint {
+    position: fixed;
+    top: auto;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    left: 5%;
+    right: auto;
+    margin-top: 0;
   }
   .view-icon {
     font-size: 16px;
@@ -1653,6 +1671,9 @@ select {
   .death-modal .eyebrow {
     font-size: 6px;
   }
+  .death-shortcut {
+    display: none;
+  }
   .toast {
     top: var(--mobile-status-top);
     font-size: 10px;
@@ -1677,13 +1698,9 @@ select {
   }
 }
 @media (max-width: 700px) and (max-height: 740px) {
-  .menu {
-    top: 19%;
-    bottom: 80px;
-  }
   h1 {
     font-size: 57px;
-    margin: 11px 0;
+    margin: 8px 0 7px;
   }
   .intro-text {
     font-size: 9px;
@@ -1743,8 +1760,7 @@ select {
   }
 }
 @media (max-width: 700px) and (max-height: 650px) {
-  .menu { top: 125px; bottom: 80px; }
-  .menu h1 { font-size: 40px; margin: 8px 0; }
+  .menu h1 { font-size: 40px; margin: 6px 0; }
   .menu .intro-text { display: none; }
 }
 @media (min-width: 701px) and (max-height: 760px) {

@@ -55,8 +55,8 @@ export class CrashPhysics {
     const head = this.part(
       dino.head,
       12,
-      [0.29, 0.28, 0.67],
-      [0, -0.02, -0.35],
+      dino.headCollision?.size || [0.29, 0.28, 0.67],
+      dino.headCollision?.offset || [0, -0.02, -0.35],
     );
     this.connect(body, neck, [0, 2.35, -0.7], 0.45);
     this.connect(neck, head, [0, 2.9, -1.35], 0.5);
@@ -143,6 +143,7 @@ export class CrashPhysics {
   }
   part(object, mass, halfExtents, offset = [0, 0, 0]) {
     object.updateWorldMatrix(true, false);
+    const scale = object.getWorldScale(new THREE.Vector3());
     const pos = object.getWorldPosition(new THREE.Vector3()),
       quat = object.getWorldQuaternion(new THREE.Quaternion());
     this.scene.attach(object);
@@ -155,8 +156,8 @@ export class CrashPhysics {
       angularDamping: 0.5,
       sleepSpeedLimit: 0.12,
     });
-    const local = new CANNON.Vec3(...offset);
-    body.addShape(new CANNON.Box(new CANNON.Vec3(...halfExtents)), local);
+    const local = new CANNON.Vec3(offset[0] * scale.x, offset[1] * scale.y, offset[2] * scale.z);
+    body.addShape(new CANNON.Box(new CANNON.Vec3(halfExtents[0] * scale.x, halfExtents[1] * scale.y, halfExtents[2] * scale.z)), local);
     body.position.copy(pos);
     body.quaternion.copy(quat);
     body.velocity.copy(this.velocity);

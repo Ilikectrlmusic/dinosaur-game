@@ -196,7 +196,8 @@ test.describe("large mobile controls", () => {
     await duck.dispatchEvent("pointerdown", { pointerId: 900, button: 0, pointerType: "touch" });
     await page.mouse.move(155, 754);
     await page.mouse.down();
-    await page.clock.runFor(300);
+    // Allow both hold recognition and the crouch transition to finish.
+    await page.clock.runFor(400);
     expect(await page.evaluate(() => window.__saurian.state.duck)).toBeGreaterThan(0.9);
     await page.mouse.up();
     await page.clock.runFor(100);

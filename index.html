@@ -46,6 +46,7 @@
         ><button class="nav-button" id="nav-settings">
           偏好设置<span>SETTINGS</span>
         </button>
+        <a class="nav-button" id="original-game" href="https://litetex.github.io/t-rex-runner" target="_blank" rel="noopener noreferrer">试玩原版<span>THE ORIGINAL</span></a>
       </nav>
       <div class="header-tools">
         <span class="live-label"><i></i> WORLD IS ALIVE</span
@@ -80,7 +81,6 @@
         <h1>A WILDER<br />KIND OF <em>RUN.</em></h1>
         <p class="intro-text">
           亿万年前的荒野，现在由你驰骋。<br />骑上恐龙，越过险境，别让本能停下来。
-          <a class="original-game" id="original-game" href="https://litetex.github.io/t-rex-runner" target="_blank" rel="noopener noreferrer">试玩原版 <span aria-hidden="true">↗</span></a>
         </p>
       </div>
       <section class="expedition" aria-label="出发设置">
@@ -110,6 +110,21 @@
             ><span class="rider-info"
               ><strong>诺瓦</strong><small>THE NOMAD</small></span
             ><span class="radio-dot"></span>
+          </button>
+        </div>
+        <div class="mount-options" role="group" aria-label="恐龙坐骑">
+          <span class="mount-label">坐骑</span>
+          <button class="mount-option selected" data-mount="allosaurus" aria-pressed="true" title="异特龙 · 苔绿鳞甲，敏捷猎手">
+            <svg viewBox="0 0 36 28" aria-hidden="true"><path fill="currentColor" d="m3 21 2-10 7-4 8 2 8-4 6 4v7l-10 2-4 6h-8l1-7-5-2-1 7Z"/><path d="m12 7 3-3 3 4m5 2 5-3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="29" cy="10" r="1.2" fill="#263026"/></svg>
+            <span>异特龙</span>
+          </button>
+          <button class="mount-option" data-mount="carnotaurus" aria-pressed="false" title="牛龙 · 赤铜双角，厚重骨甲">
+            <svg viewBox="0 0 36 28" aria-hidden="true"><path fill="currentColor" d="m3 22 1-11 8-4 9 3 5-4 8 4v9l-11 1-4 5h-9l1-8-4-1-1 7Z"/><path fill="#d5bd95" d="m23 9-1-8 5 6m3 2 4-7-1 10"/><circle cx="29" cy="13" r="1.2" fill="#263026"/></svg>
+            <span>牛龙</span>
+          </button>
+          <button class="mount-option" data-mount="dilophosaurus" aria-pressed="false" title="双脊龙 · 蓝灰鳞片，琥珀双冠">
+            <svg viewBox="0 0 36 28" aria-hidden="true"><path fill="currentColor" d="m3 22 3-11 7-3 7 4 5-2 9 3v4l-10 1-5 7h-8l2-8-5-1-2 7Z"/><path fill="#d39a65" d="M20 12q0-12 8-10l3 10Zm-4-1q0-10 6-9l4 10Z"/><circle cx="29" cy="14" r="1" fill="#263026"/></svg>
+            <span>双脊龙</span>
           </button>
         </div>
         <div class="section-label difficulty-label">
@@ -217,7 +232,7 @@
       ><span class="eyebrow">THE FIELD GUIDE</span>
       <h2>荒野生存指南</h2>
       <p class="modal-intro">
-        你的旅伴是一头迅猛的异特龙。相信它的脚步，也相信你的反应。
+        在营地选择你的恐龙旅伴。相信它的脚步，也相信你的反应。
       </p>
       <div class="guide-grid">
         <div>

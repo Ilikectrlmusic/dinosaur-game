@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { mergeStaticMeshes, loftGeometry, curveMesh } from "./model-detail.js";
 import { reptileSurface, fabricSurface, leatherSurface } from "./surface-detail.js";
 import { FlexibleRein } from "./flexible-rein.js";
+import { mountDefinition } from "./mounts.js";
 
 const sphere = new THREE.SphereGeometry(1, 24, 16);
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
@@ -121,7 +122,7 @@ function roundedPart(parent, material, size, position, radius = 0.04) {
 }
 function anatomicalPart(parent, sections, material = skin, offset = 0) {
   const geometry = loftGeometry(sections, 28);
-  if (material === skin) {
+  if (material.vertexColors) {
     const positions = geometry.attributes.position, colors = [];
     const color = new THREE.Color();
     for (let i = 0; i < positions.count; i++) {
@@ -370,24 +371,94 @@ export function buildRider(index = 0) {
   return { root, upperBody, torso, head, pelvis, limbs, backpack, index };
 }
 
-export function buildDinosaur(riderIndex = 0) {
+function mountMaterials(definition) {
+  const materials = { skin: skin.clone(), belly: belly.clone(), horn: horn.clone() };
+  for (const [name, material] of Object.entries(materials)) material.color.set(definition[name]);
+  if (definition.id !== "allosaurus") {
+    // Reuse the scale markings as luminance so the original green pigment
+    // does not tint the red and blue species or erase their surface detail.
+    for (const material of [materials.skin, materials.belly]) {
+      material.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace(
+          "diffuseColor *= sampledDiffuseColor;",
+          "sampledDiffuseColor.rgb = vec3(dot(sampledDiffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))) * 1.7; diffuseColor *= sampledDiffuseColor;",
+        ));
+      };
+      material.customProgramCacheKey = () => "saurian-pigment-v1";
+    }
+  }
+  return materials;
+}
+
+function addMountFeatures(definition, body, head, hornMaterial) {
+  if (definition.id === "carnotaurus") {
+    for (const side of [-1, 1]) {
+      ellipsoid(head, hornMaterial, [side * 0.33, 0.31, -0.22], [0.16, 0.11, 0.18]);
+      segment(head, hornMaterial, [side * 0.34, 0.31, -0.23], [side * 0.51, 0.48, -0.18], 0.135, 0.08);
+      segment(head, hornMaterial, [side * 0.51, 0.48, -0.18], [side * 0.69, 0.59, -0.1], 0.08, 0.003);
+    }
+    const armor = new THREE.MeshStandardMaterial({ color: "#6f4938", roughness: 0.96 });
+    for (const side of [-1, 1]) for (let i = 0; i < 7; i++) {
+      const z = -0.85 + i * 0.28;
+      const x = side * (0.58 - Math.abs(z) * 0.14);
+      ellipsoid(body, armor, [x, 0.27, z], [0.075, 0.09, 0.095]);
+      ellipsoid(body, armor, [x * 1.06, -0.02, z + 0.12], [0.06, 0.07, 0.085]);
+    }
+  } else if (definition.id === "dilophosaurus") {
+    const crests = new THREE.Group();
+    crests.scale.y = 0.75;
+    head.add(crests);
+    const shape = new THREE.Shape();
+    shape.moveTo(-1.15, 0.12);
+    shape.bezierCurveTo(-1.14, 0.4, -0.93, 0.77, -0.63, 0.87);
+    shape.bezierCurveTo(-0.37, 0.96, -0.12, 0.65, 0.13, 0.22);
+    shape.bezierCurveTo(-0.3, 0.33, -0.75, 0.3, -1.15, 0.12);
+    const crestMaterial = new THREE.MeshStandardMaterial({ ...reptile, map: null, color: "#bd7950", roughness: 0.84 });
+    const rimMaterial = new THREE.MeshStandardMaterial({ color: "#e3b978", roughness: 0.9 });
+    for (const side of [-1, 1]) {
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.045, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.018, bevelThickness: 0.012, curveSegments: 16 });
+      const positions = geometry.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const z = positions.getX(i), y = positions.getY(i), x = positions.getZ(i);
+        positions.setXYZ(i, side * 0.2 - x + 0.0225, y, z);
+      }
+      geometry.computeVertexNormals();
+      const crest = new THREE.Mesh(geometry, crestMaterial);
+      crest.castShadow = crest.receiveShadow = true;
+      crests.add(crest);
+      crests.add(curveMesh([[side * 0.2, 0.18, -1.14], [side * 0.2, 0.62, -0.95], [side * 0.2, 0.87, -0.63], [side * 0.2, 0.68, -0.24], [side * 0.2, 0.24, 0.1]], 0.018, rimMaterial, 24));
+      for (let i = 0; i < 4; i++) {
+        const z = -0.97 + i * 0.22;
+        crests.add(curveMesh([[side * 0.238, 0.23, z], [side * 0.238, 0.39, z + 0.01], [side * 0.238, 0.5 + Math.sin((i + 1) / 5 * Math.PI) * 0.25, z + 0.09]], 0.008, hornMaterial, 8));
+      }
+    }
+  }
+}
+
+export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
+  const definition = mountDefinition(mountId);
+  const { skin, belly, horn } = mountMaterials(definition);
+  const sole = belly.clone();
+  sole.color.copy(skin.color).multiplyScalar(0.1);
+  sole.map = null;
+  sole.roughness = 0.96;
   const root = new THREE.Group();
   const body = new THREE.Group();
   body.position.set(0, 1.97, 0.25);
   root.add(body);
-  anatomicalPart(body, [[-1.45, 0.1, 0.07, 0.08], [-1.12, 0.08, 0.4, 0.49], [-0.65, 0.04, 0.6, 0.67], [0.05, 0, 0.66, 0.73], [0.75, 0.05, 0.5, 0.61], [1.35, 0.02, 0.13, 0.19]]);
+  anatomicalPart(body, [[-1.45, 0.1, 0.07, 0.08], [-1.12, 0.08, 0.4, 0.49], [-0.65, 0.04, 0.6, 0.67], [0.05, 0, 0.66, 0.73], [0.75, 0.05, 0.5, 0.61], [1.35, 0.02, 0.13, 0.19]], skin);
   ellipsoid(body, belly, [0, -0.25, -0.36], [0.51, 0.47, 0.89], [0.15, 0, 0]);
   ellipsoid(body, skin, [0, 0.13, -0.85], [0.47, 0.61, 0.65], [0.4, 0, 0]);
   // A thick, curved neck connects to a muscular, expressive head.
   const neck = new THREE.Group();
   neck.position.set(0, 2.49, -0.94);
   root.add(neck);
-  anatomicalPart(neck, [[-0.54, 0.35, 0.23, 0.3], [-0.32, 0.25, 0.31, 0.45], [0, 0, 0.37, 0.56], [0.32, -0.3, 0.34, 0.47], [0.5, -0.43, 0.14, 0.17]]);
+  anatomicalPart(neck, [[-0.54, 0.35, 0.23, 0.3], [-0.32, 0.25, 0.31, 0.45], [0, 0, 0.37, 0.56], [0.32, -0.3, 0.34, 0.47], [0.5, -0.43, 0.14, 0.17]], skin);
   ellipsoid(neck, belly, [0, -0.14, -0.28], [0.29, 0.48, 0.17], [-0.3, 0, 0]);
   const head = new THREE.Group();
   head.position.set(0, 3.02, -1.48);
   root.add(head);
-  anatomicalPart(head, [[-1.19, -0.04, 0.07, 0.07], [-1.03, -0.01, 0.25, 0.18], [-0.72, 0.02, 0.3, 0.22], [-0.33, 0.06, 0.39, 0.31], [0.06, 0.015, 0.31, 0.3], [0.26, -0.09, 0.13, 0.14]]);
+  anatomicalPart(head, [[-1.19, -0.04, 0.07, 0.07], [-1.03, -0.01, 0.25, 0.18], [-0.72, 0.02, 0.3, 0.22], [-0.33, 0.06, 0.39, 0.31], [0.06, 0.015, 0.31, 0.3], [0.26, -0.09, 0.13, 0.14]], skin);
   // Mouth line and independently modeled lower jaw.
   ellipsoid(head, darkLeather, [0, -0.175, -0.58], [0.316, 0.035, 0.57]);
   const jaw = new THREE.Group();
@@ -473,25 +544,28 @@ export function buildDinosaur(riderIndex = 0) {
         0.025,
         0.005,
       );
+    arm.scale.setScalar(definition.armScale);
   }
   const legs = [];
   for (const s of [-1, 1]) {
     const hip = new THREE.Group();
     hip.position.set(s * 0.49, 1.84, 0.61);
     root.add(hip);
-    const thigh = anatomicalPart(hip, [[-0.86, 0.24, 0.13, 0.16], [-0.55, 0.15, 0.23, 0.27], [-0.2, 0.02, 0.33, 0.4], [0.14, -0.05, 0.29, 0.34], [0.33, -0.02, 0.12, 0.16]]);
+    const thigh = anatomicalPart(hip, [[-0.86, 0.24, 0.13, 0.16], [-0.55, 0.15, 0.23, 0.27], [-0.2, 0.02, 0.33, 0.4], [0.14, -0.05, 0.29, 0.34], [0.33, -0.02, 0.12, 0.16]], skin);
     thigh.geometry.rotateX(-Math.PI / 2);
     thigh.position.x = s * 0.065;
     const shin = new THREE.Group();
     shin.position.set(s * 0.07, -0.72, -0.27);
     hip.add(shin);
-    const calf = anatomicalPart(shin, [[-0.95, -0.28, 0.07, 0.09], [-0.66, -0.23, 0.12, 0.14], [-0.28, -0.07, 0.17, 0.2], [0.12, 0.01, 0.1, 0.12]]);
+    const calf = anatomicalPart(shin, [[-0.95, -0.28, 0.07, 0.09], [-0.66, -0.23, 0.12, 0.14], [-0.28, -0.07, 0.17, 0.2], [0.12, 0.01, 0.1, 0.12]], skin);
     calf.geometry.rotateX(-Math.PI / 2);
     shin.add(curveMesh([[s * 0.05, -0.11, 0.04], [s * 0.08, -0.51, 0.26], [0, -0.86, 0.29]], 0.035, belly, 10));
     const foot = new THREE.Group();
     foot.position.set(0, -1.74, 0.15);
     hip.add(foot);
-    segment(foot, skin, [0, 0.03, 0.12], [0, -0.01, -0.2], 0.13, 0.14);
+    anatomicalPart(foot, [[-0.34, -0.025, 0.16, 0.06], [-0.16, 0.015, 0.19, 0.095], [0.02, 0.05, 0.145, 0.105], [0.16, 0.035, 0.105, 0.08], [0.245, 0.02, 0.025, 0.025]], skin);
+    ellipsoid(foot, skin, [0, 0.08, 0.095], [0.085, 0.12, 0.09]);
+    ellipsoid(foot, sole, [0, -0.055, 0.025], [0.125, 0.045, 0.205]);
     for (let t = 0; t < 3; t++) {
       ellipsoid(
         foot,
@@ -577,6 +651,10 @@ export function buildDinosaur(riderIndex = 0) {
     [0, -0.02, -0.74],
     [0, 0, 0],
   ).scale.y = 0.65;
+  addMountFeatures(definition, body, head, horn);
+  body.scale.x = definition.bodyWidth;
+  neck.scale.x = definition.neckWidth;
+  head.scale.set(definition.headWidth, definition.headHeight, definition.snoutLength);
   mergeStaticMeshes(root);
   const cactusContacts = [body, ...legs.flatMap(({ hip, shin, foot }) => [hip, shin, foot])]
     .flatMap((part) => part.children.filter((child) => child.isMesh))
@@ -613,6 +691,8 @@ export function buildDinosaur(riderIndex = 0) {
     },
     home,
     cactusContacts,
+    mountId: definition.id,
+    headCollision: definition.headCollision,
   };
 }
 

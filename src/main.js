@@ -35,6 +35,7 @@ import { DeathOverlay } from "./death-overlay.js";
 import { MobileInput } from "./mobile-input.js";
 import { surfaceReady } from "./surface-detail.js";
 import { FireBreath } from "./fire-breath.js";
+import { mountDefinition } from "./mounts.js";
 
 const $ = (id) => document.getElementById(id);
 let saved = {};
@@ -46,6 +47,7 @@ try {
 const state = {
   mode: "menu",
   rider: Math.min(2, Math.max(0, saved.rider || 0)),
+  mount: mountDefinition(saved.mount).id,
   difficulty: CONFIG[saved.difficulty] ? saved.difficulty : "easy",
   view: saved.view === "first" ? "first" : "third",
   distance: 0,
@@ -122,6 +124,7 @@ function persist() {
       "saurian-preferences",
       JSON.stringify({
         rider: state.rider,
+        mount: state.mount,
         difficulty: state.difficulty,
         view: state.view,
         best: state.best,
@@ -142,6 +145,11 @@ function toast(message) {
   toastTimeout = setTimeout(() => $("toast").classList.remove("visible"), 2100);
 }
 function updateSelection() {
+  document.querySelectorAll("[data-mount]").forEach((button) => {
+    const selected = button.dataset.mount === state.mount;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", selected);
+  });
   document.querySelectorAll("[data-rider]").forEach((b) => {
     const selected = Number(b.dataset.rider) === state.rider;
     b.classList.toggle("selected", selected);
@@ -181,7 +189,7 @@ function resetDino() {
     world.scene.remove(dino.root);
     releaseModel(dino.root);
   }
-  dino = buildDinosaur(state.rider);
+  dino = buildDinosaur(state.rider, state.mount);
   world.scene.add(dino.root);
   dino.root.position.set(0, 0, 0);
 }
@@ -604,6 +612,16 @@ function frame(now) {
 }
 function bindUI() {
   $("distance").addEventListener("animationend", () => $("distance").classList.remove("milestone-flash"));
+  document.querySelectorAll("[data-mount]").forEach((button) => button.addEventListener("click", () => {
+    if (state.mode !== "menu" || state.mount === button.dataset.mount) return;
+    state.mount = mountDefinition(button.dataset.mount).id;
+    dragLook.reset();
+    resetDino();
+    animateDinosaur(dino, state.time);
+    updateSelection();
+    persist();
+    audio.click();
+  }));
   document.querySelectorAll("[data-rider]").forEach((b) =>
     b.addEventListener("click", () => {
       state.rider = Number(b.dataset.rider);
@@ -713,6 +731,11 @@ function bindUI() {
       return;
     }
     if (e.repeat) return;
+    if (key === " " && state.mode === "menu") {
+      e.preventDefault();
+      startGame();
+      return;
+    }
     if (key === "v") toggleView();
     else if (key === "m") setSound(!state.sound);
     else if (key === "f") $("fullscreen-toggle").click();
@@ -827,6 +850,7 @@ function init() {
           return {
             mode: state.mode,
             rider: state.rider,
+            mount: dino.mountId,
             difficulty: state.difficulty,
             view: state.view,
             distance: state.distance,

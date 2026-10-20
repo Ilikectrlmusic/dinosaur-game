@@ -16,6 +16,21 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
     if (message.type() === "error" && /WebGLProgram|shader error|VALIDATE_STATUS/.test(message.text())) errors.push(message.text());
   });
   await page.clock.install({ time: new Date("2026-10-19T08:00:00Z") });
+  // After the long run, deliberately spawn the flight height used by the
+  // negative-action check. Model UUIDs must not decide whether that bird ever
+  // appears in a short random window; its movement/collision remain real.
+  await page.route("**/src/rules.js*", async (route) => {
+    const response = await route.fetch();
+    const source = await response.text();
+    const declaration = "export function chooseObstacle(distance, random = Math.random) {";
+    expect(source).toContain(declaration);
+    await route.fulfill({ response, body: source.replace(declaration, declaration + `
+      if (distance >= 2150 && window.__testBird) return {
+        type: "bird", variant: window.__testBird,
+        flightHeight: BIRD_HEIGHTS[window.__testBird], height: 0.5,
+      };
+    `) });
+  });
   // Render the real opening normally. During long simulated runs, omit only
   // drawing; the game loop, spawning, controls, collision and physics still run.
   await page.route("**/src/main.js*", async (route) => {
@@ -61,15 +76,19 @@ test("survive staggered obstacles and two fire milestones in each difficulty, th
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
 
   for (const difficulty of Object.keys(CONFIG)) {
+    const mount = { easy: "allosaurus", normal: "carnotaurus", hard: "dilophosaurus" }[difficulty];
+    await page.locator(`[data-mount="${mount}"]`).tap();
     await page.locator(`[data-difficulty="${difficulty}"]`).tap();
     await page.locator("#start-button").tap();
     const seen = new Set();
     const speeds = [];
     const failOn = difficulty === "normal" ? "low" : difficulty === "hard" ? "high" : null;
+    await page.evaluate((variant) => { window.__testBird = variant; }, failOn);
     let ducking = false, failure = null, pauseChecked = false, switchedToFirst = false;
     const activeBursts = new Set(), captured = new Set();
     let previousMilestone = 0;
     let state = await page.evaluate(() => window.__saurian.state);
+    expect(state.mount).toBe(mount);
     while (state.distance < (failOn ? 2600 : 2250)) {
       const next = state.obstacles.filter((o) => o.z < 0.8).sort((a, b) => b.z - a.z)[0];
       const eta = next ? -next.z / (state.speed + (next.type === "bird" ? 2.5 : 0)) : Infinity;

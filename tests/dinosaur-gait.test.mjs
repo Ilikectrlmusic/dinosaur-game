@@ -225,3 +225,69 @@ test("landing flows into the next stride without holding both legs or stalling t
     assert.ok(slowestStance > 2.5, `the trailing foot cannot linger in place: ${slowestStance}`);
   }
 });
+
+test("knees bend continuously through the extension limit without a sudden angular-speed change", () => {
+  const thigh = Math.hypot(0.72, 0.27), calf = Math.hypot(0.92, 0.27), rest = Math.atan2(0.27, 0.72);
+  const ankleY = 0.12, z = -0.6, epsilon = 1e-4;
+  const limit = ankleY + Math.sqrt((thigh + calf - 0.001) ** 2 - z ** 2);
+  const angle = (height) => solveLeg(height, ankleY, z, thigh, calf, rest).hip;
+  const before = (angle(limit) - angle(limit - epsilon)) / epsilon;
+  const after = (angle(limit + epsilon) - angle(limit)) / epsilon;
+  assert.ok(Math.abs(before - after) < 0.02, "crossing full extension cannot abruptly unlock the knee");
+  assert.ok(Math.abs(before) < 3 && Math.abs(after) < 3);
+});
+
+test("the second foot reaches the ground with continuous velocity and acceleration", () => {
+  const dt = 1e-5, gait = new DinosaurGait(), values = new Map();
+  gait.update(0, 1, 0, dt, 0);
+  gait.update(0.9, 1, 0.01, dt, -10);
+  gait.update(1, 1, 0, dt, 0);
+  const contact = Math.round(LANDING_STEP_DELAY / dt);
+  for (let frame = 1; frame <= contact + 3; frame++) {
+    const pose = gait.update(1 + frame * dt, 1, 0, dt, 0);
+    if (frame >= contact - 3) values.set(frame, pose.legs[1 - gait.lead].z);
+  }
+  const at = (offset) => values.get(contact + offset);
+  const velocityBefore = (at(0) - at(-1)) / dt, velocityAfter = (at(1) - at(0)) / dt;
+  const accelerationBefore = (at(0) - 2 * at(-1) + at(-2)) / dt ** 2;
+  const accelerationAfter = (at(2) - 2 * at(1) + at(0)) / dt ** 2;
+  assert.ok(Math.abs(velocityBefore - velocityAfter) < 0.01);
+  assert.ok(Math.abs(accelerationBefore - accelerationAfter) < 1, "touchdown cannot introduce a jerk in the leg trajectory");
+});
+
+test("the leading foot already travels backward at its stance speed before touchdown", () => {
+  const gait = new DinosaurGait(), dt = 1e-5;
+  gait.update(0, 1, 0, dt, 0);
+  for (let i = 0; i < 4; i++) gait.update(i * 0.25, 1, 1, 0.25, -4);
+  const samples = [];
+  for (const remaining of [2 * dt, dt, 0, -dt]) {
+    const height = remaining > 0 ? 10.5 * remaining - 11 * remaining ** 2 : 0;
+    const velocity = remaining > 0 ? -10.5 + 22 * remaining : 0;
+    const pose = gait.update(1 - remaining, 1, height, dt, velocity);
+    samples.push(pose.legs[gait.lead].z);
+  }
+  const speeds = samples.slice(1).map((z, i) => (z - samples[i]) / dt);
+  assert.ok(speeds.every((speed) => speed > 3.8 && speed < 3.9));
+  assert.ok(Math.max(...speeds) - Math.min(...speeds) < 0.01, "contact cannot switch the foot from stationary to sliding backward");
+});
+
+test("recovery joins the current running stride continuously while the game accelerates", () => {
+  const dt = 1e-5;
+  for (const initialSpeed of [10, 14, 30]) {
+    const gait = new DinosaurGait();
+    gait.update(0, 1, 0, dt, 0, initialSpeed);
+    gait.update(0.9, 1, 0.01, dt, -10, initialSpeed);
+    gait.update(1, 1, 0, dt, 0, initialSpeed);
+    let previous = structuredClone(gait.pose), checked = false;
+    for (let frame = 1; frame * dt < LANDING_RECOVERY + dt * 3; frame++) {
+      const age = frame * dt, pose = gait.update(1 + age, 1, 0, dt, 0, initialSpeed + age * 0.2);
+      if (previous.mode === "landing" && pose.mode === "running") {
+        pose.legs.forEach((leg, i) => assert.ok(Math.abs(leg.z - previous.legs[i].z) < 12 * dt,
+          "the recovery boundary cannot swap in a different stride span"));
+        checked = true;
+      }
+      previous = { mode: pose.mode, legs: pose.legs.map((leg) => ({ z: leg.z })) };
+    }
+    assert.ok(checked);
+  }
+});

@@ -806,7 +806,8 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
       Math.max(support - jump / dino.sizeScale, extendedHeight), pose.extension);
     pose.lift = ankleHeight - support;
     const joint = solveLeg(hipHeight,
-      ankleHeight, pose.z, leg.thighLength, leg.shinLength, leg.thighRestAngle);
+      ankleHeight, pose.z, leg.thighLength, leg.shinLength, leg.thighRestAngle,
+      0.08 * (1 - pose.extension));
     leg.hip.rotation.x = joint.hip;
     leg.hip.position.y = joint.y;
     leg.foot.position.set(leg.side * 0.07, joint.footY, joint.footZ);

@@ -41,9 +41,13 @@ function runningLeg(leg, phase, span) {
 
 // Two fixed length bones, with the knee always bending forward. Coordinates
 // are in the dinosaur root, relative to the hip; no animated bone scaling.
-export function solveLeg(hipHeight, ankleHeight, ankleZ, thighLength, calfLength, restAngle) {
+export function solveLeg(hipHeight, ankleHeight, ankleZ, thighLength, calfLength, restAngle, softness = 0.08) {
   const maxReach = thighLength + calfLength - 0.001;
-  const y = Math.min(hipHeight, ankleHeight + Math.sqrt(Math.max(0, maxReach ** 2 - ankleZ ** 2)));
+  const reachHeight = ankleHeight + Math.sqrt(Math.max(0, maxReach ** 2 - ankleZ ** 2));
+  // Round the reach limit before solving the knee. A hard min kept the knee
+  // almost locked, then released it with an abrupt angular-velocity jump.
+  // The ankle stays on its target and both bones retain their real lengths.
+  const y = (hipHeight + reachHeight - Math.hypot(hipHeight - reachHeight, softness)) / 2;
   const dy = ankleHeight - y;
   const distance = Math.hypot(dy, ankleZ);
   const kneeAngle = Math.acos(clamp((thighLength ** 2 + distance ** 2 - calfLength ** 2) / (2 * thighLength * distance), -1, 1));
@@ -134,7 +138,8 @@ export class DinosaurGait {
           pitch: mix(-0.38, 0.12, sweep), lift: 0.36, extension: 1 };
         blendLeg(leg, this.takeoff[i], flying, push);
         const landing = leading
-          ? { z: -this.span, pitch: 0.18, lift: 0, extension: 0 }
+          ? { z: -this.span - this.span * 2 / Math.PI * this.rate * Math.min(0.2, remaining),
+            pitch: 0.18, lift: 0, extension: 0 }
           : { z: 0.24, pitch: -0.38, lift: 0.34, extension: 0 };
         blendLeg(leg, leg, landing, reach);
       });
@@ -159,7 +164,8 @@ export class DinosaurGait {
       } else {
         if (Number.isFinite(this.landingAge)) this.landingAge += step;
         const advance = fresh ? 0 : step * (Number.isFinite(this.landingAge)
-          ? this.landingRate * landingSpeedScale(this.travelRecoveryAge) : this.rate);
+          ? mix(this.landingRate, this.rate, smooth(0.25, LANDING_RECOVERY, this.landingAge))
+            * landingSpeedScale(this.travelRecoveryAge) : this.rate);
         this.phase += advance;
         if (Number.isFinite(this.landingAge)) {
           this.landingTravelPhase += advance;
@@ -178,7 +184,8 @@ export class DinosaurGait {
         this.phase += correction - this.landingPhaseCorrection;
         this.landingPhaseCorrection = correction;
       }
-      const strideSpan = recovering ? this.landingSpan : this.span;
+      const strideSpan = recovering
+        ? mix(this.landingSpan, this.span, smooth(0.25, LANDING_RECOVERY, this.landingAge)) : this.span;
       pose.mode = recovering ? "landing" : "running";
       pose.legs.forEach((leg, i) => {
         const trailing = i !== this.lead;
@@ -190,7 +197,7 @@ export class DinosaurGait {
             const t = this.landingAge / LANDING_STEP_DELAY;
             const blend = smooth(0, 1, t);
             leg.z = mix(0.24, -strideSpan, blend) + strideSpan * 2 / Math.PI * this.landingRate
-              * landingSpeedScale(LANDING_STEP_DELAY) * LANDING_STEP_DELAY * (t ** 3 - t ** 2);
+              * landingSpeedScale(LANDING_STEP_DELAY) * LANDING_STEP_DELAY * (-4 * t ** 3 + 7 * t ** 4 - 3 * t ** 5);
             leg.pitch = mix(-0.38, 0.18, blend);
             leg.lift = 0.34 * (1 - blend);
             leg.extension = 0;

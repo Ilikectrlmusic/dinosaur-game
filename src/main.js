@@ -36,6 +36,7 @@ import { MobileInput } from "./mobile-input.js";
 import { surfaceReady } from "./surface-detail.js";
 import { FireBreath } from "./fire-breath.js";
 import { mountDefinition } from "./mounts.js";
+import { RenderBudget } from "./render-budget.js";
 
 const $ = (id) => document.getElementById(id);
 const PERFORMANCE_PREFERENCES = {
@@ -76,6 +77,7 @@ const state = {
   volume: saved.volume ?? 0.55,
 };
 const startupPowerPreference = state.powerPreference;
+const renderBudget = new RenderBudget();
 const audio = new GameAudio();
 audio.setEnabled(state.sound);
 audio.setVolume(state.volume);
@@ -358,9 +360,10 @@ function spawnWave() {
   state.spawn = spawnDelay(state.difficulty, state.speed, Math.random, spec.depth || 0);
 }
 function updateHUD() {
-  $("distance").innerHTML =
-    Math.floor(state.distance) + "<small> M</small>";
-  $("speed").textContent = Math.round(state.speed * 3.6);
+  const metres = String(Math.floor(state.distance)), speed = String(Math.round(state.speed * 3.6));
+  // Reuse the number node instead of rebuilding the HUD in every physics step.
+  if ($("distance").firstChild.nodeValue !== metres) $("distance").firstChild.nodeValue = metres;
+  if ($("speed").textContent !== speed) $("speed").textContent = speed;
 }
 function finishCrash(generation) {
   if (generation !== roundGeneration || state.mode !== "crashed") return;
@@ -591,6 +594,7 @@ function frame(now) {
   if (state.mode === "paused" || state.mode === "dead") {
     // Leave the last 3D frame behind the modal. No physics or GPU work competes
     // with the dialog's pointer events while the player chooses the next action.
+    renderBudget.resetTiming();
     return;
   }
   state.time += dt;
@@ -623,6 +627,10 @@ function frame(now) {
   world.update(dt, state.time, speed, state.y);
   audio.update(dt, speed, state.mode === "running", state.y > 0.1);
   updateCamera(dt);
+  if (renderBudget.sample(dt)) {
+    renderer.setPixelRatio(renderBudget.ratio);
+    world.setRenderScale(renderBudget.ratio / renderBudget.maxRatio);
+  }
   fire.setViewport(renderer.domElement.height, camera.fov, state.view === "first");
   renderer.render(world.scene, camera);
 }
@@ -803,9 +811,9 @@ function bindUI() {
     document.addEventListener(type, () => audio.init(), { capture: true, passive: true });
 }
 function applyQuality() {
-  renderer.setPixelRatio(
-    Math.min(devicePixelRatio, state.quality === "high" ? (innerWidth < 700 ? 1.5 : 1.65) : 1),
-  );
+  renderBudget.reset(Math.min(devicePixelRatio, state.quality === "high" ? (innerWidth < 700 ? 1.5 : 1.65) : 1),
+    state.quality === "high" ? 0.8 : 0.7);
+  renderer.setPixelRatio(renderBudget.ratio);
   renderer.shadowMap.enabled = state.quality === "high";
   world.sun.castShadow = state.quality === "high";
   world.setQuality(state.quality);
@@ -855,7 +863,7 @@ function init() {
       camera.aspect = innerWidth / innerHeight;
       camera.fov = innerWidth < 700 ? 53 : 45;
       camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
+      applyQuality();
       if (["paused", "dead"].includes(state.mode))
         renderer.render(world.scene, camera);
     });
@@ -903,6 +911,7 @@ function init() {
             },
             physicsBodies: physics?.world.bodies.length || 0,
             crashIssue,
+            renderBudget: { fps: renderBudget.fps, pixelRatio: renderBudget.ratio },
             riderScreen: dino.rider.pelvis
               .getWorldPosition(riderScreen)
               .project(camera)

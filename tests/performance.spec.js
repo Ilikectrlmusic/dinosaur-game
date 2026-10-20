@@ -6,7 +6,8 @@ async function openGame(page) {
     await route.fulfill({ response, body: (await response.text()).replaceAll(
       "renderer.render(world.scene, camera);",
       "if (!window.__skipGraphics) renderer.render(world.scene, camera);",
-    ) });
+    ).replace("// A small read-only diagnostic surface",
+      "window.__renderReview = { renderer, world }; // A small read-only diagnostic surface") });
   });
   await page.addInitScript(() => {
     if (!localStorage.getItem("saurian-preferences"))
@@ -86,5 +87,44 @@ test.describe("phone preferences", () => {
     await page.locator("#settings-save").tap();
     await expect(page.locator("#settings-dialog")).not.toBeVisible();
     expect(await page.evaluate(() => window.__settingsCheck)).toBe(true);
+  });
+});
+
+test.describe("adaptive rendering", () => {
+  test.use({ deviceScaleFactor: 2 });
+  test("slow frames reduce only 3D resolution and shadows, while HUD nodes, controls and quality preference remain intact", async ({ page }) => {
+    await openGame(page);
+    await page.clock.install();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+    await page.locator("#nav-settings").click();
+    await page.locator("#quality-setting").selectOption("high");
+    await page.locator("#settings-save").click();
+    const before = await page.locator("#scene canvas").evaluate((canvas) => ({ pixels: canvas.width, css: canvas.getBoundingClientRect().width }));
+    for (let i = 0; i < 85; i++) await page.clock.fastForward(100);
+    const after = await page.evaluate(() => {
+      const canvas = document.querySelector("#scene canvas");
+      return { pixels: canvas.width, css: canvas.getBoundingClientRect().width,
+        shadow: window.__renderReview.world.sun.shadow.mapSize.x,
+        quality: JSON.parse(localStorage.getItem("saurian-preferences")).quality };
+    });
+    expect(after.pixels).toBeLessThan(before.pixels * 0.8);
+    expect(after.css).toBe(before.css);
+    expect(after.shadow).toBe(1024);
+    expect(after.quality).toBe("high");
+    await page.evaluate(() => { window.__distanceNode = document.querySelector("#distance").firstChild; });
+    await page.locator("#start-button").click();
+    await page.clock.runFor(500);
+    expect(await page.evaluate(() => window.__distanceNode === document.querySelector("#distance").firstChild)).toBe(true);
+    await page.locator("#pause-button").click();
+    const ratio = await page.evaluate(() => window.__saurian.state.renderBudget.pixelRatio);
+    await page.clock.fastForward(3000);
+    expect(await page.evaluate(() => window.__saurian.state.renderBudget.pixelRatio)).toBe(ratio);
+    await page.locator("#pause-home").click();
+    await page.setViewportSize({ width: 1024, height: 768 });
+    // WebKit queues viewport resize asynchronously even with a frozen clock.
+    await expect.poll(async () => {
+      await page.clock.runFor(50);
+      return page.locator("#scene canvas").evaluate((canvas) => ({ pixels: canvas.width, css: canvas.getBoundingClientRect().width }));
+    }).toEqual({ pixels: Math.floor(1024 * 1.65), css: 1024 });
   });
 });

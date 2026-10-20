@@ -124,7 +124,11 @@ export class DesertWorld {
     const count = quality === "high" ? 4200 : 2400;
     this.grassBlades.count = count;
     this.grassTwin.children[0].count = count;
-    const shadowSize = quality === "high" && innerWidth >= 700 ? 2048 : 1024;
+    this.setRenderScale(1);
+  }
+  setRenderScale(scale) {
+    const fullSize = this.quality === "high" && innerWidth >= 700 ? 2048 : 1024;
+    const shadowSize = scale < (fullSize === 2048 ? 0.85 : 0.7) ? fullSize / 2 : fullSize;
     if (this.sun.shadow.mapSize.x !== shadowSize) {
       this.sun.shadow.mapSize.set(shadowSize, shadowSize);
       this.sun.shadow.map?.dispose();

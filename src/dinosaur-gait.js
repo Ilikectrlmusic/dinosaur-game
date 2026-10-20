@@ -10,16 +10,18 @@ const smooth = (start, end, value) => {
   const t = clamp((value - start) / (end - start), 0, 1);
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
-const impact = (age, duration) => age > 0 ? (age / duration) * Math.exp(1 - age / duration) : 0;
-const legPose = () => ({ z: 0.15, pitch: 0, lift: 0 });
+// Zero initial velocity AND acceleration prevent a one-frame drop on contact.
+const impact = (age, duration) => age > 0 ? (age / duration) ** 3 * Math.exp(3 * (1 - age / duration)) : 0;
+const legPose = () => ({ z: 0.15, pitch: 0, lift: 0, extension: 0 });
 const blendLeg = (out, from, to, t) => {
-  for (const key of ["z", "pitch", "lift"]) out[key] = mix(from[key], to[key], t);
+  for (const key of ["z", "pitch", "lift", "extension"]) out[key] = mix(from[key], to[key], t);
 };
 
 // Stance travels steadily back under the hip. The swing keeps that velocity at
 // both ends, folds the knee for clearance, then reaches forward for touchdown.
 // A rotating hip alone describes an arc and makes the foot skate / calf stretch.
 function runningLeg(leg, phase, span) {
+  leg.extension = 0;
   const p = ((phase % TAU) + TAU) % TAU;
   if (p < Math.PI) {
     const t = p / Math.PI;
@@ -48,7 +50,7 @@ export function solveLeg(hipHeight, ankleHeight, ankleZ, thighLength, calfLength
 
 // Local clocks survive multiple physics steps in a single rendered frame.
 // Jump physics remains immediate; the first 100 ms visibly pushes off before
-// the legs fold, and each landing foot resumes its own continuous stride.
+// both legs extend in flight, and each landing foot resumes its own stride.
 export class DinosaurGait {
   constructor() {
     this.initialized = false;
@@ -94,7 +96,7 @@ export class DinosaurGait {
       this.phaseOffsets.fill(0);
       this.phase = time * this.rate;
       pose.mode = "idle";
-      pose.legs.forEach((leg) => { leg.z = 0.15; leg.pitch = leg.lift = 0; });
+      pose.legs.forEach((leg) => { leg.z = 0.15; leg.pitch = leg.lift = leg.extension = 0; });
     } else if (height > 0.00001 || verticalVelocity > 0) {
       if (!this.airborne) {
         this.airborne = true;
@@ -114,23 +116,28 @@ export class DinosaurGait {
         ? (velocity + Math.sqrt(velocity * velocity + 2 * GRAVITY * height)) / GRAVITY : Infinity;
       const reach = 1 - smooth(0, 0.2, remaining);
       const push = smooth(0, 0.1, this.flightAge);
-      const tuck = smooth(0.08, 0.29, this.flightAge);
+      const stretch = smooth(0.035, 0.34, this.flightAge);
       pose.mode = this.flightAge < 0.1 ? "takeoff" : reach > 0 ? "reaching" : "airborne";
       pose.strideWeight = 1 - smooth(0, 0.15, this.flightAge);
       pose.legs.forEach((leg, i) => {
         const supporting = i === this.support, leading = i === this.lead;
         const extended = supporting
-          ? { z: Math.min(0.7, this.takeoff[i].z + 0.16), pitch: -0.58, lift: 0.015 }
-          : { z: mix(this.takeoff[i].z, -0.24, 0.45), pitch: -0.12, lift: mix(this.takeoff[i].lift, 0.64, 0.6) };
+          ? { z: Math.min(0.7, this.takeoff[i].z + 0.16), pitch: -0.58, lift: 0.015, extension: 0 }
+          : { z: mix(this.takeoff[i].z, -0.24, 0.45), pitch: -0.12, lift: mix(this.takeoff[i].lift, 0.4, 0.6), extension: 0 };
         blendLeg(leg, this.takeoff[i], extended, push);
-        const folded = { z: leading ? -0.32 : -0.04, pitch: leading ? 0.13 : -0.12, lift: leading ? 0.72 : 0.82 };
-        blendLeg(leg, leg, folded, tuck);
+        // Both knees stay softly straight, sweeping forward together as in a
+        // forward jump. A small stagger avoids a rigid mirrored pose.
+        const sweep = smooth(0.15, 0.75, this.flightAge);
+        const flying = { z: (leading ? -0.98 : -0.90) - sweep * 0.15,
+          pitch: mix(-0.08, 0.12, sweep), lift: 0.36, extension: 1 };
+        blendLeg(leg, leg, flying, stretch);
         const landing = leading
-          ? { z: -this.span, pitch: 0.18, lift: 0 }
-          : { z: 0.24, pitch: -0.38, lift: 0.34 };
+          ? { z: -this.span, pitch: 0.18, lift: 0, extension: 0 }
+          : { z: 0.24, pitch: -0.38, lift: 0.34, extension: 0 };
         blendLeg(leg, leg, landing, reach);
       });
-      bob = mix(this.launchBob, 0.025, smooth(0, 0.2, this.flightAge)) - 0.045 * impact(this.flightAge, 0.035);
+      bob = mix(mix(this.launchBob, 0.025, smooth(0, 0.2, this.flightAge)), -0.10, reach)
+        - 0.035 * impact(this.flightAge, 0.045);
       pitch = 0.095 * smooth(0, 0.14, this.flightAge) - 0.14 * smooth(-1, 9, -velocity);
     } else {
       const touchedDown = this.airborne;
@@ -162,6 +169,7 @@ export class DinosaurGait {
             leg.z = mix(0.24, -strideSpan, blend) + strideSpan * 2 / Math.PI * this.landingRate * LANDING_STEP_DELAY * (t ** 3 - t ** 2);
             leg.pitch = mix(-0.38, 0.18, blend);
             leg.lift = 0.34 * (1 - blend);
+            leg.extension = 0;
             return;
           }
           const correction = Math.PI - this.landingRate * LANDING_STEP_DELAY;
@@ -180,10 +188,10 @@ export class DinosaurGait {
       });
       pose.strideWeight = recovering ? smooth(0.16, LANDING_RECOVERY, this.landingAge) : 1;
       if (recovering) {
-        pose.drop = (0.16 * impact(this.landingAge, 0.065) + 0.045 * impact(this.landingAge - LANDING_STEP_DELAY, 0.055)) * (1 - smooth(0.36, LANDING_RECOVERY, this.landingAge));
+        pose.drop = (0.15 * impact(this.landingAge, 0.095) + 0.035 * impact(this.landingAge - LANDING_STEP_DELAY, 0.08)) * (1 - smooth(0.36, LANDING_RECOVERY, this.landingAge));
         pitch = -pose.drop * 0.4;
       }
-      bob = (-0.15 + Math.sin(this.phase) ** 2 * 0.06) * pose.strideWeight;
+      bob = mix(-0.10, -0.15 + Math.sin(this.phase) ** 2 * 0.06, pose.strideWeight);
       pitch += Math.sin(this.phase * 2 - 0.4) * 0.018 * pose.strideWeight;
       if (this.landingAge >= LANDING_RECOVERY) this.landingAge = Infinity;
     }

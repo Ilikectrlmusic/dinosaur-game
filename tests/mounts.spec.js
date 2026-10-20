@@ -120,6 +120,7 @@ test("every mount rolls its feet without sinking and lands one foot at a time wi
       const bounds = new Box3(), point = new Vector3(), seat = new Vector3();
       let y = 0, vy = 0, baseline, seatError = 0, reinError = 0;
       let minClearance = Infinity, maxClearance = -Infinity, minPitch = Infinity, maxPitch = -Infinity, boneError = 0;
+      let minFlightExtension = Infinity, maxFlightExtension = 0, extendedSamples = 0;
       const landings = [];
       for (let frame = 0; frame < fps * 2; frame++) {
         if (frame === Math.round(fps * 0.3)) vy = JUMP_VELOCITY;
@@ -135,6 +136,14 @@ test("every mount rolls its feet without sinking and lands one foot at a time wi
           leg.shin.getWorldPosition(seat);
           boneError = Math.max(boneError, Math.abs(point.distanceTo(seat) - leg.shinLength * dino.sizeScale));
           boneError = Math.max(boneError, leg.shin.scale.distanceTo(new Vector3(1, 1, 1)));
+          const flightAge = frame * dt - 0.3;
+          if (flightAge > 0.38 && flightAge < 0.68) {
+            leg.hip.getWorldPosition(seat);
+            const extension = point.distanceTo(seat) / ((leg.thighLength + leg.shinLength) * dino.sizeScale);
+            minFlightExtension = Math.min(minFlightExtension, extension);
+            maxFlightExtension = Math.max(maxFlightExtension, extension);
+            extendedSamples++;
+          }
           const clearance = bounds.setFromObject(leg.foot, true).min.y - y - pose.legs[i].lift * dino.sizeScale;
           minClearance = Math.min(minClearance, clearance);
           maxClearance = Math.max(maxClearance, clearance);
@@ -151,7 +160,7 @@ test("every mount rolls its feet without sinking and lands one foot at a time wi
           reinError = Math.max(reinError, point.distanceTo(dino.reins[i].points[0]));
         }
       }
-      results.push({ mount: mount.id, fps, minClearance, maxClearance, minPitch, maxPitch, boneError, seatError, reinError, landings });
+      results.push({ mount: mount.id, fps, minClearance, maxClearance, minPitch, maxPitch, boneError, minFlightExtension, maxFlightExtension, extendedSamples, seatError, reinError, landings });
     }
     return results;
   });
@@ -162,6 +171,9 @@ test("every mount rolls its feet without sinking and lands one foot at a time wi
     expect(result.minPitch).toBeLessThan(-0.49);
     expect(result.maxPitch).toBeGreaterThan(0.17);
     expect(result.boneError).toBeLessThan(1e-8);
+    expect(result.extendedSamples).toBeGreaterThan(12);
+    expect(result.minFlightExtension).toBeGreaterThan(0.99);
+    expect(result.maxFlightExtension).toBeLessThan(1);
     expect(result.seatError).toBeLessThan(1e-8);
     expect(result.reinError).toBeLessThan(1e-8);
     expect(result.landings).toHaveLength(2);

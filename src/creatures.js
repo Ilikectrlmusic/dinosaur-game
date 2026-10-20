@@ -777,8 +777,15 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
   dino.jaw.rotation.x = 0.03 + Math.max(0, Math.sin(time * 0.6)) * 0.035 - fire * 0.45;
   dino.legs.forEach((leg, i) => {
     const pose = motion.legs[i];
-    const ankleHeight = supportHeight(leg.soleProfile, pose.pitch) + pose.lift;
-    const joint = solveLeg(1.84 + motion.bob - duck * 0.4 - motion.drop,
+    const support = supportHeight(leg.soleProfile, pose.pitch);
+    const hipHeight = 1.84 + motion.bob - duck * 0.4 - motion.drop;
+    // Keep a small knee bend rather than locking the joint at full reach.
+    const extendedHeight = hipHeight - Math.sqrt(Math.max(0,
+      (leg.thighLength + leg.shinLength - 0.012) ** 2 - pose.z ** 2));
+    const ankleHeight = THREE.MathUtils.lerp(support + pose.lift,
+      Math.max(support, extendedHeight), pose.extension);
+    pose.lift = ankleHeight - support;
+    const joint = solveLeg(hipHeight,
       ankleHeight, pose.z, leg.thighLength, leg.shinLength, leg.thighRestAngle);
     leg.hip.rotation.x = joint.hip;
     leg.hip.position.y = joint.y;

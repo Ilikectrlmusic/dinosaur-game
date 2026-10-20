@@ -126,3 +126,15 @@ test("jumping during impact absorption preserves the compressed body height", ()
     assert.ok(Math.abs(pose.bob - pose.drop - before) < 0.01, "re-jumping cannot snap the body out of its landing compression");
   }
 });
+
+test("touchdown eases into compression instead of dropping the body in the first frame", () => {
+  for (const fps of [30, 60, 120, 144]) {
+    const gait = new DinosaurGait(), dt = 1 / fps;
+    gait.update(0, 1, 0, dt, 0);
+    gait.update(0.9, 1, 0.01, dt, -10);
+    gait.update(1, 1, 0, dt, 0);
+    const before = gait.pose.drop;
+    gait.update(1 + dt, 1, 0, dt, 0);
+    assert.ok(gait.pose.drop - before < 1.5 * dt);
+  }
+});

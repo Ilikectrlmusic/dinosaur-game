@@ -166,9 +166,8 @@ export class CrashPhysics {
     return body;
   }
   connect(a, b, anchor, angle) {
-    const point = new CANNON.Vec3(...anchor);
-    point.x += this.dino.root.position.x;
-    point.y += this.dino.root.position.y;
+    const worldAnchor = this.dino.root.localToWorld(new THREE.Vector3(...anchor));
+    const point = new CANNON.Vec3(worldAnchor.x, worldAnchor.y, worldAnchor.z);
     const pivotA = a.pointToLocalFrame(point),
       pivotB = b.pointToLocalFrame(point);
     const joint = new CANNON.ConeTwistConstraint(a, b, {

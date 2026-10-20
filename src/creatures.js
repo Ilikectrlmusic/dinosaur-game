@@ -6,6 +6,8 @@ import { FlexibleRein } from "./flexible-rein.js";
 import { mountDefinition } from "./mounts.js";
 import { DinosaurGait } from "./dinosaur-gait.js";
 
+const saddleAnchor = new THREE.Vector3(0, 2.61, 0.15);
+
 // Cache the real sole's support height at each ankle angle. Rolling onto the
 // heel or toes must not push the mesh through the ground or make it hover.
 function footSupportProfile(foot) {
@@ -463,6 +465,15 @@ function addMountFeatures(definition, body, head, hornMaterial) {
   }
 }
 
+function seatRider(rider, sizeScale, bodyOffset = 0) {
+  // Scale the animal around its feet while keeping every rider human-sized.
+  // Compensating around the seat keeps its distance to the pelvis unchanged.
+  const inverse = 1 / sizeScale;
+  rider.root.scale.setScalar(inverse);
+  rider.root.position.copy(saddleAnchor).multiplyScalar(1 - inverse);
+  rider.root.position.y += bodyOffset;
+}
+
 export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
   const definition = mountDefinition(mountId);
   const { skin, belly, horn } = mountMaterials(definition);
@@ -471,6 +482,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
   sole.map = null;
   sole.roughness = 0.96;
   const root = new THREE.Group();
+  root.scale.setScalar(definition.sizeScale);
   const body = new THREE.Group();
   body.position.set(0, 1.97, 0.25);
   root.add(body);
@@ -645,7 +657,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     else tail[Math.min(7, Math.floor((z - 1.08) / 0.49))].attach(ridge);
   }
   const saddle = new THREE.Group();
-  saddle.position.set(0, 2.61, 0.15);
+  saddle.position.copy(saddleAnchor);
   root.add(saddle);
   const saddleCloth = new THREE.MeshStandardMaterial({ ...fabric, color: "#9d6747" });
   roundedPart(saddle, saddleCloth, [1.13, 0.08, 1.37], [0, -0.07, 0.06], 0.04);
@@ -663,6 +675,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     for (let j = 0; j < 12; j++) segment(saddle, stitch, [s * 0.51, -0.015, -0.52 + j * 0.103], [s * 0.51, -0.015, -0.46 + j * 0.103], 0.006);
   }
   let rider = buildRider(riderIndex);
+  seatRider(rider, definition.sizeScale);
   root.add(rider.root);
   const reins = [];
   const reinAnchors = [];
@@ -722,12 +735,14 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     setRider(index) {
       root.remove(rider.root);
       rider = buildRider(index);
+      seatRider(rider, definition.sizeScale);
       root.add(rider.root);
       reins.forEach((rein) => { rein.initialized = false; });
     },
     home,
     cactusContacts,
     mountId: definition.id,
+    sizeScale: definition.sizeScale,
     headCollision: definition.headCollision,
   };
 }
@@ -783,9 +798,8 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
   });
   dino.saddle.position.y = 2.61 + (dino.body.position.y - 1.97);
   const rider = dino.rider;
-  rider.root.position.y = dino.body.position.y - 1.97;
+  seatRider(rider, dino.sizeScale, dino.body.position.y - 1.97);
   rider.root.rotation.x = 0;
-  rider.root.position.z = 0;
   rider.upperBody.rotation.x =
     -duck * 1.24 + (run ? Math.sin(stride * 2) * 0.025 * motion.strideWeight : 0) + motion.pitch * 0.7;
   rider.head.rotation.x = duck * 0.8;

@@ -73,6 +73,39 @@ test("mount selection survives rider changes, reload, retry and camp without ove
   expect(errors).toEqual([]);
 });
 
+test("mounts have subtly decreasing body sizes while every rider keeps the same size and seat height", async ({ page }) => {
+  await openGame(page);
+  const sizes = await page.evaluate(async () => {
+    const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
+    const { MOUNTS } = await import("/src/mounts.js");
+    const source = await (await fetch("/src/main.js")).text();
+    const { Box3, Vector3 } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
+    return MOUNTS.map((mount) => {
+      const dino = buildDinosaur(0, mount.id);
+      dino.setRider(2);
+      animateDinosaur(dino, 1, 1, 0, 0, 0);
+      // Compare the torso itself; the species keep different arm lengths.
+      const torso = new Box3();
+      for (const part of dino.body.children)
+        if (part.isMesh) torso.union(new Box3().setFromObject(part, true));
+      const body = torso.getSize(new Vector3());
+      const rider = new Box3().setFromObject(dino.rider.root, true).getSize(new Vector3());
+      const seatOffset = dino.rider.pelvis.getWorldPosition(new Vector3()).sub(dino.saddle.getWorldPosition(new Vector3()));
+      return { id: mount.id, body: body.toArray(), volume: body.x * body.y * body.z, rider: rider.toArray(), seatOffset: seatOffset.toArray() };
+    });
+  });
+  expect(sizes.map((mount) => mount.id)).toEqual(["allosaurus", "carnotaurus", "dilophosaurus"]);
+  for (let i = 1; i < sizes.length; i++) {
+    expect(sizes[i - 1].body[1]).toBeGreaterThan(sizes[i].body[1] * 1.04);
+    expect(sizes[i - 1].body[2]).toBeGreaterThan(sizes[i].body[2] * 1.04);
+    expect(sizes[i - 1].volume).toBeGreaterThan(sizes[i].volume);
+    sizes[i].rider.forEach((value, axis) => expect(value).toBeCloseTo(sizes[0].rider[axis], 6));
+    sizes[i].seatOffset.forEach((value, axis) => expect(value).toBeCloseTo(sizes[0].seatOffset[axis], 6));
+  }
+  expect(sizes[0].body[1] / sizes[2].body[1]).toBeLessThan(1.18);
+  expect(sizes[0].body[2] / sizes[2].body[2]).toBeLessThan(1.18);
+});
+
 test("every mount rolls its feet without sinking and lands one foot at a time with the rider seated", async ({ page }) => {
   await openGame(page);
   const results = await page.evaluate(async () => {
@@ -97,7 +130,7 @@ test("every mount rolls its feet without sinking and lands one foot at a time wi
         const pose = dino.gait.pose;
         if (pose.landingContacts) landings.push({ time: frame * dt, mask: pose.landingContacts });
         for (const [i, leg] of dino.legs.entries()) {
-          const clearance = bounds.setFromObject(leg.foot, true).min.y - y - pose.legs[i].lift;
+          const clearance = bounds.setFromObject(leg.foot, true).min.y - y - pose.legs[i].lift * dino.sizeScale;
           minClearance = Math.min(minClearance, clearance);
           maxClearance = Math.max(maxClearance, clearance);
           if (pose.mode === "running") {
@@ -176,7 +209,7 @@ test("all species keep the saddle and reins connected, clear visible cactus gaps
       for (let i = 0; i < 360; i++) physics.update(1 / 120);
       results.push({
         mount: mount.id, rider, seats, reins, clear, mouthError, fireAlive,
-        headSize: headBounds.getSize(new Vector3()).toArray(),
+        headProportions: headBounds.getSize(new Vector3()).divideScalar(dino.sizeScale).toArray(),
         finite: physics.world.bodies.every((body) => [body.position.x, body.position.y, body.position.z, body.quaternion.w].every(Number.isFinite)),
         height: physics.centerBody.position.y,
       });
@@ -198,7 +231,7 @@ test("all species keep the saddle and reins connected, clear visible cactus gaps
   const allo = results.find((result) => result.mount === "allosaurus");
   const carno = results.find((result) => result.mount === "carnotaurus");
   const dilo = results.find((result) => result.mount === "dilophosaurus");
-  expect(carno.headSize[0]).toBeGreaterThan(allo.headSize[0] * 1.5);
-  expect(dilo.headSize[1]).toBeGreaterThan(allo.headSize[1] * 1.15);
-  expect(dilo.headSize[2]).toBeGreaterThan(allo.headSize[2] * 1.1);
+  expect(carno.headProportions[0]).toBeGreaterThan(allo.headProportions[0] * 1.5);
+  expect(dilo.headProportions[1]).toBeGreaterThan(allo.headProportions[1] * 1.15);
+  expect(dilo.headProportions[2]).toBeGreaterThan(allo.headProportions[2] * 1.1);
 });

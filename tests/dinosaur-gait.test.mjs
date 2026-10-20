@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DinosaurGait, LANDING_STEP_DELAY, LANDING_RECOVERY } from "../src/dinosaur-gait.js";
+import { DinosaurGait, solveLeg, LANDING_STEP_DELAY, LANDING_RECOVERY } from "../src/dinosaur-gait.js";
 import { advanceJump, JUMP_VELOCITY } from "../src/rules.js";
 
 test("running rolls the ankles through push-off and touchdown with alternating contacts", () => {
@@ -27,7 +27,7 @@ test("jumps extend into two ordered landings, absorb the impact and recover at e
     let time = offset, y = 0, vy = JUMP_VELOCITY, landedAt, peakDrop = 0;
     gait.update(time, 1, 0, dt, 0);
     let previous = structuredClone(gait.pose);
-    for (let frame = 0; frame < fps * 1.6; frame++) {
+    for (let frame = 0; frame < fps * 2; frame++) {
       time += dt;
       const step = advanceJump(y, vy, dt);
       y = step.y; vy = step.vy;
@@ -37,7 +37,7 @@ test("jumps extend into two ordered landings, absorb the impact and recover at e
       if (pose.landingContacts) touchdowns.push({ time, mask: pose.landingContacts, lifts: pose.legs.map((leg) => leg.lift) });
       peakDrop = Math.max(peakDrop, pose.drop);
       for (let i = 0; i < 2; i++) {
-        assert.ok(Math.abs(pose.legs[i].hip - previous.legs[i].hip) < 15 * dt, "leg rotation stays continuous across takeoff and landing");
+        assert.ok(Math.abs(pose.legs[i].z - previous.legs[i].z) < 15 * dt, "foot trajectory stays continuous across takeoff and landing");
         assert.ok(Math.abs(pose.legs[i].lift - previous.legs[i].lift) < 8 * dt, "no foot teleports at the old jump-height cutoff");
       }
       previous = structuredClone(pose);
@@ -65,11 +65,64 @@ test("a fresh jump interrupts landing smoothly and returning to camp clears reco
   assert.equal(gait.pose.mode, "landing");
   const before = structuredClone(gait.pose);
   gait.update(0.94, 1, 0.17, 1 / 60, 10);
-  assert.equal(gait.pose.mode, "airborne");
+  assert.equal(gait.pose.mode, "takeoff");
   assert.equal(gait.pose.contacts, 0);
-  assert.ok(Math.abs(gait.pose.legs[0].hip - before.legs[0].hip) < 0.02);
+  assert.ok(Math.abs(gait.pose.legs[0].z - before.legs[0].z) < 0.02);
   gait.update(1, 0, 0, 1 / 60, 0);
   assert.equal(gait.pose.mode, "idle");
   assert.equal(gait.pose.drop, 0);
   assert.equal(gait.pose.contacts, 0);
+});
+
+test("planted feet move steadily backward and cadence responds smoothly to running speed", () => {
+  const counts = [];
+  for (const speed of [10, 14, 36]) {
+    const gait = new DinosaurGait();
+    let previous, contacts = 0, plantedSamples = 0;
+    for (let frame = 0; frame < 360; frame++) {
+      const pose = gait.update(frame / 120, 1, 0, 1 / 120, 0, speed);
+      if (pose.contacts) contacts++;
+      for (let i = 0; i < 2; i++) {
+        const leg = pose.legs[i], before = previous?.legs[i];
+        if (before?.lift === 0 && leg.lift === 0) {
+          const travel = leg.z - before.z;
+          assert.ok(travel > 0 && travel < 0.055, "stance cannot reverse or snap across the ground");
+          plantedSamples++;
+        }
+      }
+      previous = structuredClone(pose);
+    }
+    assert.ok(plantedSamples > 300);
+    counts.push(contacts);
+  }
+  assert.ok(counts[0] < counts[1] && counts[1] < counts[2]);
+  assert.ok(counts[2] <= 13, "sprinting should not become a frantic foot shuffle");
+});
+
+test("articulated legs keep bone lengths and hit foot targets through running, crouching and flight", () => {
+  const thigh = Math.hypot(0.72, 0.27), calf = Math.hypot(0.92, 0.27);
+  for (const hipY of [1.24, 1.65, 1.84]) for (const ankleY of [0.12, 0.3, 0.9]) for (const z of [-0.7, -0.3, 0, 0.3, 0.7]) {
+    const joint = solveLeg(hipY, ankleY, z, thigh, calf, Math.atan2(0.27, 0.72));
+    assert.ok(Object.values(joint).every(Number.isFinite));
+    assert.ok(Math.abs(Math.hypot(joint.footY + 0.72, joint.footZ + 0.27) - calf) < 1e-10);
+    const actualY = joint.y + joint.footY * Math.cos(joint.hip) - joint.footZ * Math.sin(joint.hip);
+    const actualZ = joint.footY * Math.sin(joint.hip) + joint.footZ * Math.cos(joint.hip);
+    assert.ok(Math.abs(actualY - ankleY) < 1e-10);
+    assert.ok(Math.abs(actualZ - z) < 1e-10);
+  }
+});
+
+test("jumping during impact absorption preserves the compressed body height", () => {
+  for (const age of [0.025, 0.075, 0.15, 0.3, 0.5]) {
+    const gait = new DinosaurGait(), dt = 1 / 120;
+    gait.update(0, 1, 0, dt, 0);
+    gait.update(0.2, 1, 1, dt, 5);
+    gait.update(0.9, 1, 0.001, dt, -10);
+    gait.update(1, 1, 0, dt, 0);
+    for (let t = 0; t < age; t += dt) gait.update(1 + t, 1, 0, dt, 0);
+    const before = gait.pose.bob - gait.pose.drop;
+    const pose = gait.update(1 + age + dt, 1, 0.087, dt, 10.3);
+    assert.equal(pose.mode, "takeoff");
+    assert.ok(Math.abs(pose.bob - pose.drop - before) < 0.01, "re-jumping cannot snap the body out of its landing compression");
+  }
 });

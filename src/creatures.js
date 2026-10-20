@@ -4,7 +4,7 @@ import { mergeStaticMeshes, loftGeometry, curveMesh } from "./model-detail.js";
 import { reptileSurface, fabricSurface, leatherSurface } from "./surface-detail.js";
 import { FlexibleRein } from "./flexible-rein.js";
 import { mountDefinition } from "./mounts.js";
-import { DinosaurGait } from "./dinosaur-gait.js";
+import { DinosaurGait, solveLeg } from "./dinosaur-gait.js";
 
 const saddleAnchor = new THREE.Vector3(0, 2.61, 0.15);
 
@@ -624,6 +624,8 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
       shinDirection: new THREE.Vector3(),
       shinRest: new THREE.Vector3(0, -0.92, 0.27).normalize(),
       shinLength: Math.hypot(0.92, 0.27),
+      thighLength: Math.hypot(0.72, 0.27),
+      thighRestAngle: Math.atan2(0.27, 0.72),
     });
   }
   // Articulated tapering tail with a slight natural curve.
@@ -752,56 +754,55 @@ export function cactusContactBounds(dino) {
   return dino.cactusContacts.map(({ mesh, bounds }) => bounds.setFromObject(mesh, true));
 }
 
-export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 / 60, fire = 0, verticalVelocity) {
-  const motion = dino.gait.update(time, run, jump, dt, verticalVelocity);
+export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 / 60, fire = 0, verticalVelocity, speed = 14) {
+  const motion = dino.gait.update(time, run, jump, dt, verticalVelocity, speed);
   const stride = run ? motion.phase : time * 1.3,
     breathing = Math.sin(time * 1.8);
   dino.body.position.y =
     1.97 +
-    (run ? Math.abs(Math.sin(stride)) * 0.085 * motion.strideWeight : breathing * 0.018) -
+    (run ? motion.bob : breathing * 0.018) -
     duck * 0.62 - motion.drop;
   dino.body.rotation.x = duck * 0.16 + motion.pitch;
+  dino.body.rotation.z = run ? Math.sin(stride) * 0.012 * motion.strideWeight : 0;
   dino.neck.position.y =
     2.49 -
     duck * 1.04 +
-    (run ? Math.sin(stride * 2) * 0.035 * motion.strideWeight : breathing * 0.02) - motion.drop * 0.65;
+    (run ? motion.bob * 0.65 : breathing * 0.02) - motion.drop * 0.65;
   dino.neck.rotation.x = -duck * 0.35 + motion.pitch * 0.5;
   dino.head.position.y =
     3.02 -
     duck * 1.18 +
-    (run ? Math.sin(stride * 2 - 0.5) * 0.04 * motion.strideWeight : breathing * 0.025) - motion.drop * 0.5;
+    (run ? motion.bob * 0.35 : breathing * 0.025) - motion.drop * 0.5;
   dino.head.rotation.x = duck * 0.14 + Math.sin(time * 0.7) * 0.018 + fire * 0.07 + motion.pitch * 0.3;
   dino.jaw.rotation.x = 0.03 + Math.max(0, Math.sin(time * 0.6)) * 0.035 - fire * 0.45;
   dino.legs.forEach((leg, i) => {
     const pose = motion.legs[i];
-    leg.hip.rotation.x = pose.hip;
-    leg.hip.position.y = 1.84 - duck * 0.4 - motion.drop;
-    const a = leg.hip.rotation.x;
     const ankleHeight = supportHeight(leg.soleProfile, pose.pitch) + pose.lift;
-    leg.foot.position.y =
-      (ankleHeight - leg.hip.position.y + Math.sin(a) * leg.foot.position.z) / Math.cos(a);
-    leg.foot.rotation.x = pose.pitch - a;
-    const direction = leg.shinDirection.set(-leg.side * 0.07, leg.foot.position.y + 0.72, leg.foot.position.z + 0.27);
-    const length = direction.length();
+    const joint = solveLeg(1.84 + motion.bob - duck * 0.4 - motion.drop,
+      ankleHeight, pose.z, leg.thighLength, leg.shinLength, leg.thighRestAngle);
+    leg.hip.rotation.x = joint.hip;
+    leg.hip.position.y = joint.y;
+    leg.foot.position.set(leg.side * 0.07, joint.footY, joint.footZ);
+    leg.foot.rotation.x = pose.pitch - joint.hip;
+    const direction = leg.shinDirection.set(0, joint.footY + 0.72, joint.footZ + 0.27);
     leg.shin.quaternion.setFromUnitVectors(
       leg.shinRest,
       direction.normalize(),
     );
-    leg.shin.scale.setScalar(length / leg.shinLength);
   });
-  dino.tail[0].position.y = 1.98 - duck * 0.5 - motion.drop * 0.6;
+  dino.tail[0].position.y = 1.98 + motion.bob * 0.7 - duck * 0.5 - motion.drop * 0.6;
   dino.tail.forEach((joint, i) => {
-    joint.rotation.y =
-      Math.sin(time * (run ? 3.5 : 1.1) - i * 0.45) * (0.05 + i * 0.006);
-    joint.rotation.x =
-      -0.05 + Math.sin(time * 2 - i * 0.4) * 0.015 + duck * 0.025 + motion.pitch * 0.4;
+    joint.rotation.y = THREE.MathUtils.damp(joint.rotation.y,
+      Math.sin((run ? stride : time * 1.1) - i * 0.45) * (0.035 + i * 0.004), 12 - i * 0.65, dt);
+    joint.rotation.x = THREE.MathUtils.damp(joint.rotation.x,
+      -0.05 + Math.sin((run ? stride * 2 : time * 2) - i * 0.4) * 0.012 + duck * 0.025 + motion.tailPitch * (i ? 0.12 : 1), 12 - i * 0.65, dt);
   });
   dino.saddle.position.y = 2.61 + (dino.body.position.y - 1.97);
   const rider = dino.rider;
   seatRider(rider, dino.sizeScale, dino.body.position.y - 1.97);
   rider.root.rotation.x = 0;
   rider.upperBody.rotation.x =
-    -duck * 1.24 + (run ? Math.sin(stride * 2) * 0.025 * motion.strideWeight : 0) + motion.pitch * 0.7;
+    -duck * 1.24 + (run ? Math.sin(stride * 2 - 0.4) * 0.012 * motion.strideWeight : 0) + motion.riderPitch;
   rider.head.rotation.x = duck * 0.8;
   rider.head.rotation.y = Math.sin(time * 0.55) * 0.06;
   rider.torso.rotation.x = -0.1;

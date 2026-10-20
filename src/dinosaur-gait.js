@@ -2,32 +2,53 @@ import { GRAVITY } from "./rules.js";
 
 export const STRIDE_RATE = 9.8;
 export const LANDING_STEP_DELAY = 0.14;
-export const LANDING_RECOVERY = 0.4;
+export const LANDING_RECOVERY = 0.65;
 const TAU = Math.PI * 2;
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (start, end, value) => {
-  const t = Math.max(0, Math.min(1, (value - start) / (end - start)));
+  const t = clamp((value - start) / (end - start), 0, 1);
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
-const pulse = (age, start, duration) => age > start && age < start + duration
-  ? Math.sin((age - start) / duration * Math.PI) ** 2 : 0;
-const legPose = () => ({ hip: 0, pitch: 0, lift: 0 });
+const impact = (age, duration) => age > 0 ? (age / duration) * Math.exp(1 - age / duration) : 0;
+const legPose = () => ({ z: 0.15, pitch: 0, lift: 0 });
+const blendLeg = (out, from, to, t) => {
+  for (const key of ["z", "pitch", "lift"]) out[key] = mix(from[key], to[key], t);
+};
 
-function runningLeg(leg, phase) {
+// Stance travels steadily back under the hip. The swing keeps that velocity at
+// both ends, folds the knee for clearance, then reaches forward for touchdown.
+// A rotating hip alone describes an arc and makes the foot skate / calf stretch.
+function runningLeg(leg, phase, span) {
   const p = ((phase % TAU) + TAU) % TAU;
-  leg.hip = -Math.cos(p) * 0.52;
-  leg.lift = Math.max(0, Math.sin(p)) ** 1.5 * 0.46;
   if (p < Math.PI) {
-    const swing = p / Math.PI;
-    leg.pitch = -0.5 * (1 - smooth(0, 0.45, swing)) + 0.18 * smooth(0.45, 1, swing);
+    const t = p / Math.PI;
+    leg.z = span * (1 + 2 * t - 12 * t * t + 8 * t * t * t);
+    leg.lift = Math.sin(t * Math.PI) ** 2 * 0.57;
+    leg.pitch = -0.52 * (1 - smooth(0, 0.55, t)) + 0.18 * smooth(0.55, 1, t);
   } else {
-    const stance = p / Math.PI - 1;
-    leg.pitch = 0.18 * (1 - smooth(0, 0.22, stance)) - 0.5 * smooth(0.58, 1, stance);
+    const t = p / Math.PI - 1;
+    leg.z = mix(-span, span, t);
+    leg.lift = 0;
+    leg.pitch = 0.18 * (1 - smooth(0, 0.2, t)) - 0.52 * smooth(0.64, 1, t);
   }
 }
 
-// A local animation clock keeps the same motion when a rendered frame contains
-// several physics steps. Flight holds the stride; touchdown chooses its phase.
+// Two fixed length bones, with the knee always bending forward. Coordinates
+// are in the dinosaur root, relative to the hip; no animated bone scaling.
+export function solveLeg(hipHeight, ankleHeight, ankleZ, thighLength, calfLength, restAngle) {
+  const maxReach = thighLength + calfLength - 0.001;
+  const y = Math.min(hipHeight, ankleHeight + Math.sqrt(Math.max(0, maxReach ** 2 - ankleZ ** 2)));
+  const dy = ankleHeight - y;
+  const distance = Math.hypot(dy, ankleZ);
+  const kneeAngle = Math.acos(clamp((thighLength ** 2 + distance ** 2 - calfLength ** 2) / (2 * thighLength * distance), -1, 1));
+  const hip = Math.atan2(-ankleZ, -dy) + kneeAngle - restAngle;
+  return { y, hip, footY: Math.cos(hip) * dy + Math.sin(hip) * ankleZ, footZ: -Math.sin(hip) * dy + Math.cos(hip) * ankleZ };
+}
+
+// Local clocks survive multiple physics steps in a single rendered frame.
+// Jump physics remains immediate; the first 100 ms visibly pushes off before
+// the legs fold, and each landing foot resumes its own continuous stride.
 export class DinosaurGait {
   constructor() {
     this.initialized = false;
@@ -36,102 +57,142 @@ export class DinosaurGait {
     this.flightAge = 0;
     this.landingAge = Infinity;
     this.lead = 0;
+    this.support = 0;
     this.phase = 0;
+    this.rate = STRIDE_RATE;
+    this.span = 0.62;
     this.takeoff = [legPose(), legPose()];
+    this.previousLegPhases = [NaN, NaN];
+    this.phaseOffsets = [0, 0];
     this.pose = {
       legs: [legPose(), legPose()], phase: 0, mode: "idle",
-      drop: 0, pitch: 0, strideWeight: 0, contacts: 0, landingContacts: 0,
+      bob: 0, drop: 0, pitch: 0, tailPitch: 0, riderPitch: 0,
+      strideWeight: 0, contacts: 0, landingContacts: 0,
     };
   }
 
-  update(time, run, height, dt, verticalVelocity) {
-    const step = Math.max(0, Math.min(0.25, dt));
-    const pose = this.pose;
-    const fresh = !this.initialized;
+  update(time, run, height, dt, verticalVelocity, speed = 14) {
+    const step = clamp(dt, 0, 0.25), pose = this.pose, fresh = !this.initialized;
+    const rate = STRIDE_RATE * clamp((speed / 14) ** 0.35, 0.9, 1.35);
+    const span = 0.62 * clamp((speed / 14) ** 0.2, 0.9, 1.12);
+    this.rate = mix(this.rate, rate, fresh ? 1 : 1 - Math.exp(-step * 7));
+    this.span = mix(this.span, span, fresh ? 1 : 1 - Math.exp(-step * 7));
     if (fresh) {
       this.initialized = true;
-      this.phase = time * STRIDE_RATE;
-      pose.legs.forEach((leg, i) => runningLeg(leg, this.phase + i * Math.PI));
+      this.phase = time * this.rate;
+      pose.legs.forEach((leg, i) => runningLeg(leg, this.phase + i * Math.PI, this.span));
     }
     pose.contacts = pose.landingContacts = 0;
-    pose.drop = pose.pitch = 0;
+    const previousDrop = pose.drop;
+    pose.drop = 0;
     pose.strideWeight = run ? 1 : 0;
+    let bob = 0, pitch = 0;
     if (!run) {
       this.airborne = false;
       this.landingAge = Infinity;
-      this.phase = time * STRIDE_RATE;
+      this.previousLegPhases.fill(NaN);
+      this.phaseOffsets.fill(0);
+      this.phase = time * this.rate;
       pose.mode = "idle";
-      pose.legs.forEach((leg, i) => {
-        leg.hip = Math.sin(time * 0.8 + i) * 0.015;
-        leg.pitch = leg.lift = 0;
-      });
+      pose.legs.forEach((leg) => { leg.z = 0.15; leg.pitch = leg.lift = 0; });
     } else if (height > 0.00001 || verticalVelocity > 0) {
       if (!this.airborne) {
         this.airborne = true;
         this.flightAge = 0;
         this.landingAge = Infinity;
-        this.lead = pose.legs[0].hip >= pose.legs[1].hip ? 0 : 1;
+        this.support = pose.legs[0].lift <= pose.legs[1].lift ? 0 : 1;
+        this.lead = 1 - this.support;
         pose.legs.forEach((leg, i) => Object.assign(this.takeoff[i], leg));
+        this.launchBob = pose.bob - previousDrop;
+        pose.bob = this.launchBob;
+        this.previousLegPhases.fill(NaN);
       }
       this.flightAge += step;
       const velocity = Number.isFinite(verticalVelocity)
         ? verticalVelocity : (height - this.previousHeight) / Math.max(step, 0.001);
       const remaining = velocity < 0
         ? (velocity + Math.sqrt(velocity * velocity + 2 * GRAVITY * height)) / GRAVITY : Infinity;
-      const reach = 1 - smooth(0, 0.17, remaining);
-      const tuck = smooth(0, 0.18, this.flightAge);
-      pose.mode = reach > 0 ? "reaching" : "airborne";
-      pose.strideWeight = 1 - tuck;
+      const reach = 1 - smooth(0, 0.2, remaining);
+      const push = smooth(0, 0.1, this.flightAge);
+      const tuck = smooth(0.08, 0.29, this.flightAge);
+      pose.mode = this.flightAge < 0.1 ? "takeoff" : reach > 0 ? "reaching" : "airborne";
+      pose.strideWeight = 1 - smooth(0, 0.15, this.flightAge);
       pose.legs.forEach((leg, i) => {
-        const leading = i === this.lead;
-        leg.hip = mix(this.takeoff[i].hip, mix(0.65 + i * 0.12, leading ? 0.3 : -0.18, reach), tuck);
-        leg.pitch = mix(this.takeoff[i].pitch, mix(leading ? 0.22 : 0.08, leading ? 0.18 : -0.35, reach), tuck);
-        leg.lift = mix(this.takeoff[i].lift, mix(leading ? 0.52 : 0.64, leading ? 0 : 0.3, reach), tuck);
+        const supporting = i === this.support, leading = i === this.lead;
+        const extended = supporting
+          ? { z: Math.min(0.7, this.takeoff[i].z + 0.16), pitch: -0.58, lift: 0.015 }
+          : { z: mix(this.takeoff[i].z, -0.24, 0.45), pitch: -0.12, lift: mix(this.takeoff[i].lift, 0.64, 0.6) };
+        blendLeg(leg, this.takeoff[i], extended, push);
+        const folded = { z: leading ? -0.32 : -0.04, pitch: leading ? 0.13 : -0.12, lift: leading ? 0.72 : 0.82 };
+        blendLeg(leg, leg, folded, tuck);
+        const landing = leading
+          ? { z: -this.span, pitch: 0.18, lift: 0 }
+          : { z: 0.24, pitch: -0.38, lift: 0.34 };
+        blendLeg(leg, leg, landing, reach);
       });
+      bob = mix(this.launchBob, 0.025, smooth(0, 0.2, this.flightAge)) - 0.045 * impact(this.flightAge, 0.035);
+      pitch = 0.095 * smooth(0, 0.14, this.flightAge) - 0.14 * smooth(-1, 9, -velocity);
     } else {
-      const previousLandingAge = this.landingAge;
-      const previousPhase = this.phase;
-      if (this.airborne) {
+      const touchedDown = this.airborne;
+      const before = this.landingAge;
+      if (touchedDown) {
         this.airborne = false;
         this.landingAge = 0;
-        pose.contacts = pose.landingContacts = 1 << this.lead;
-      } else if (Number.isFinite(this.landingAge)) this.landingAge += step;
-      if (this.landingAge < LANDING_STEP_DELAY) {
-        const transfer = smooth(0, LANDING_STEP_DELAY, this.landingAge);
-        this.phase = (this.lead === 0 ? Math.PI : 0) + Math.PI * transfer;
-        pose.legs.forEach((leg, i) => {
-          const leading = i === this.lead;
-          leg.hip = leading ? mix(0.3, -0.52, transfer) : mix(-0.18, 0.52, transfer);
-          leg.pitch = leading
-            ? 0.18 * (1 - smooth(0, 0.04, this.landingAge)) - 0.5 * smooth(0.065, LANDING_STEP_DELAY, this.landingAge)
-            : mix(-0.35, 0.18, transfer);
-          leg.lift = leading ? 0 : 0.3 * (1 - transfer);
-        });
+        this.phase = Math.PI - this.lead * Math.PI;
+        this.phaseOffsets[0] = 0;
+        this.phaseOffsets[1] = this.lead === 0 ? -TAU : 0;
+        this.landingRate = this.rate;
+        this.landingSpan = this.span;
       } else {
-        this.phase = Number.isFinite(this.landingAge)
-          ? (this.lead === 0 ? TAU : Math.PI) + STRIDE_RATE * (this.landingAge - LANDING_STEP_DELAY)
-          : this.phase + (fresh ? 0 : step * STRIDE_RATE);
-        pose.legs.forEach((leg, i) => runningLeg(leg, this.phase + i * Math.PI));
-        if (previousLandingAge < LANDING_STEP_DELAY) {
-          pose.contacts = pose.landingContacts = 1 << (1 - this.lead);
-        } else if (!fresh) {
-          for (let i = 0; i < 2; i++) {
-            const before = Math.floor((previousPhase + i * Math.PI - Math.PI) / TAU);
-            const after = Math.floor((this.phase + i * Math.PI - Math.PI) / TAU);
-            if (after > before) pose.contacts |= 1 << i;
+        if (Number.isFinite(this.landingAge)) this.landingAge += step;
+        this.phase += fresh ? 0 : step * (Number.isFinite(this.landingAge) ? this.landingRate : this.rate);
+      }
+      const recovering = this.landingAge < LANDING_RECOVERY;
+      const strideSpan = recovering ? this.landingSpan : this.span;
+      pose.mode = recovering ? "landing" : "running";
+      pose.legs.forEach((leg, i) => {
+        const trailing = i !== this.lead;
+        let phase = this.phase + i * Math.PI + this.phaseOffsets[i];
+        if (recovering && trailing) {
+          // The second foot takes a shorter first step. Let its next stance
+          // linger rather than whipping the planted first leg backward.
+          if (this.landingAge < LANDING_STEP_DELAY) {
+            const t = this.landingAge / LANDING_STEP_DELAY;
+            const blend = smooth(0, 1, t);
+            leg.z = mix(0.24, -strideSpan, blend) + strideSpan * 2 / Math.PI * this.landingRate * LANDING_STEP_DELAY * (t ** 3 - t ** 2);
+            leg.pitch = mix(-0.38, 0.18, blend);
+            leg.lift = 0.34 * (1 - blend);
+            return;
           }
+          const correction = Math.PI - this.landingRate * LANDING_STEP_DELAY;
+          // Use an unwrapped phase to keep contact detection continuous.
+          phase += correction * (1 - smooth(LANDING_STEP_DELAY, LANDING_RECOVERY, this.landingAge));
         }
+        runningLeg(leg, phase, strideSpan);
+        const previous = this.previousLegPhases[i];
+        if ((touchedDown && !trailing) || (recovering && trailing && before < LANDING_STEP_DELAY && this.landingAge >= LANDING_STEP_DELAY)) {
+          pose.contacts |= 1 << i;
+          pose.landingContacts |= 1 << i;
+        } else if (Number.isFinite(previous) && Math.floor((phase - Math.PI) / TAU) > Math.floor((previous - Math.PI) / TAU)) {
+          pose.contacts |= 1 << i;
+        }
+        this.previousLegPhases[i] = phase;
+      });
+      pose.strideWeight = recovering ? smooth(0.16, LANDING_RECOVERY, this.landingAge) : 1;
+      if (recovering) {
+        pose.drop = (0.16 * impact(this.landingAge, 0.065) + 0.045 * impact(this.landingAge - LANDING_STEP_DELAY, 0.055)) * (1 - smooth(0.36, LANDING_RECOVERY, this.landingAge));
+        pitch = -pose.drop * 0.4;
       }
-      pose.mode = this.landingAge < LANDING_RECOVERY ? "landing" : "running";
-      if (Number.isFinite(this.landingAge)) {
-        const first = pulse(this.landingAge, 0, 0.28);
-        const second = pulse(this.landingAge, LANDING_STEP_DELAY, 0.24);
-        pose.drop = first * 0.14 + second * 0.045;
-        pose.pitch = first * 0.045 - second * 0.018;
-        pose.strideWeight = smooth(LANDING_STEP_DELAY, LANDING_RECOVERY, this.landingAge);
-        if (this.landingAge >= LANDING_RECOVERY) this.landingAge = Infinity;
-      }
+      bob = (-0.15 + Math.sin(this.phase) ** 2 * 0.06) * pose.strideWeight;
+      pitch += Math.sin(this.phase * 2 - 0.4) * 0.018 * pose.strideWeight;
+      if (this.landingAge >= LANDING_RECOVERY) this.landingAge = Infinity;
     }
+    // Head, tail and rider react at different rates instead of moving as one
+    // rigid assembly. Exponential response is stable at low/mobile frame rates.
+    pose.bob = mix(pose.bob, bob, fresh ? 1 : 1 - Math.exp(-step * 24));
+    pose.pitch = mix(pose.pitch, pitch, fresh ? 1 : 1 - Math.exp(-step * 18));
+    pose.tailPitch = mix(pose.tailPitch, -pose.pitch * 0.7, 1 - Math.exp(-step * 9));
+    pose.riderPitch = mix(pose.riderPitch, -pose.pitch * 0.7 - pose.drop * 0.35, 1 - Math.exp(-step * 11));
     this.previousHeight = height;
     pose.phase = this.phase;
     return pose;

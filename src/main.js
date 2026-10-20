@@ -446,7 +446,7 @@ function updateGameplay(dt) {
   );
   dino.root.position.set(state.x, state.y, 0);
   dino.root.rotation.z = THREE.MathUtils.damp(dino.root.rotation.z, 0, 8, dt);
-  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength, state.vy);
+  animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength, state.vy, state.speed);
   fire.update(dt, dino.head, state.speed);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
@@ -537,13 +537,13 @@ function updateCamera(dt) {
     dino.rider.head.getWorldPosition(headPos);
     const y = headPos.y + 0.03;
     const bob =
-      state.motion && state.y < 0.1 ? Math.sin(state.time * 19.6) * 0.035 : 0;
+      state.motion ? Math.sin(dino.gait.pose.phase * 2) * 0.02 * dino.gait.pose.strideWeight : 0;
     targetCamera.set(headPos.x, y + bob, headPos.z - 0.25);
     targetLook.set(state.x, y - 0.18, -36);
   } else {
     dino.rider.root.visible = true;
     const bob =
-      state.motion && state.y < 0.1 ? Math.sin(state.time * 19.6) * 0.027 : 0;
+      state.motion ? Math.sin(dino.gait.pose.phase * 2) * 0.015 * dino.gait.pose.strideWeight : 0;
     targetCamera.set(
       state.x * 0.6 + (mobile ? 4.5 : 6.4),
       4.6 + state.y * 0.45 + bob,

@@ -91,7 +91,7 @@ async function layout(page) {
       tipCenterOffset: tip.getBoundingClientRect().left + tip.getBoundingClientRect().width / 2 - innerWidth / 2,
       viewAnchor: innerWidth <= 700 ? view.getBoundingClientRect().top : innerHeight - view.getBoundingClientRect().bottom,
       viewLeft: view.getBoundingClientRect().left,
-      hudGap: view.getBoundingClientRect().top - document.getElementById("game-hud").getBoundingClientRect().bottom,
+      hudGap: view.querySelector("button").getBoundingClientRect().top - document.getElementById("game-hud").getBoundingClientRect().bottom,
       hintGap: hint.getBoundingClientRect().top - view.getBoundingClientRect().bottom,
     };
   });
@@ -108,6 +108,60 @@ async function playUntil(page, seconds) {
   }
   throw new Error(`The game did not reach ${seconds} seconds`);
 }
+
+test("survival guides show independent touch and keyboard instructions for the active layout", async ({ page }) => {
+  await openControlledGame(page);
+  await page.locator("#nav-guide").click();
+  const guide = page.locator("#guide-dialog");
+  for (const [width, height] of [[1280, 800], [390, 844], [320, 568], [701, 800], [700, 800]]) {
+    await page.setViewportSize({ width, height });
+    const mobile = width <= 700;
+    const active = guide.locator(mobile ? ".guide-mobile" : ".guide-desktop");
+    await expect(active).toBeVisible();
+    await expect(guide.locator(mobile ? ".guide-desktop" : ".guide-mobile")).toBeHidden();
+    await expect(active.locator(".guide-grid > div")).toHaveCount(4);
+    await expect(active).toContainText("150 米");
+    await expect(active).toContainText("300 米");
+    if (mobile) {
+      await expect(active).toContainText("右下角");
+      await expect(active).toContainText("左下角");
+      await expect(active).not.toContainText(/SPACE|ESC|键盘|鼠标/);
+    } else {
+      await expect(active).toContainText("SPACE");
+      await expect(active).toContainText("鼠标");
+      await expect(active).not.toContainText(/右下角|左下角|轻触/);
+    }
+    expect(await guide.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  }
+  await guide.locator(".modal-close-action").click();
+  await expect(guide).not.toBeVisible();
+});
+
+test("varied near rocks meet the terrain and keep the running lane clear", async ({ page }) => {
+  await openControlledGame(page);
+  const result = await page.evaluate(() => {
+    const world = window.__testWorld, { Matrix4, Vector3 } = window.__testThree;
+    const matrix = new Matrix4(), point = new Vector3(), bottom = new Vector3();
+    let count = 0, largestGap = -Infinity, innerEdge = Infinity;
+    for (const batch of world.rocks.children) for (let i = 0; i < batch.count; i++) {
+      batch.getMatrixAt(i, matrix);
+      bottom.set(0, Infinity, 0);
+      const positions = batch.geometry.attributes.position;
+      for (let v = 0; v < positions.count; v++) {
+        point.fromBufferAttribute(positions, v).applyMatrix4(matrix);
+        if (point.y < bottom.y) bottom.copy(point);
+        innerEdge = Math.min(innerEdge, Math.abs(point.x));
+      }
+      largestGap = Math.max(largestGap, bottom.y - world.groundHeightAt(bottom.x, bottom.z));
+      count++;
+    }
+    return { count, kinds: new Set(world.rocks.children.map((batch) => batch.geometry.name)).size, largestGap, innerEdge };
+  });
+  expect(result.kinds).toBeGreaterThanOrEqual(5);
+  expect(result.count).toBeGreaterThanOrEqual(200);
+  expect(result.largestGap).toBeLessThan(0);
+  expect(result.innerEdge).toBeGreaterThan(4.5);
+});
 
 for (const mobile of [false, true]) {
   test.describe(mobile ? "portrait phone" : "desktop", () => {
@@ -153,10 +207,11 @@ for (const mobile of [false, true]) {
       const opening = await layout(page);
       expect(opening.tipBottom).toBe(mobile ? 104 : 39);
       expect(Math.abs(opening.tipCenterOffset)).toBeLessThan(0.5);
-      expect(opening.viewAnchor).toBe(mobile ? 98 : 32);
+      expect(opening.viewAnchor).toBe(mobile ? 72 : 32);
       if (mobile) {
         expect(opening.viewLeft).toBe(18);
-        expect(opening.hudGap).toBeGreaterThanOrEqual(12);
+        expect(opening.hudGap).toBeGreaterThanOrEqual(8);
+        expect(opening.viewAnchor).toBe(await page.locator("#toast").evaluate((element) => parseFloat(getComputedStyle(element).top)));
         expect(opening.hintGap).toBe(7);
         await page.setViewportSize({ width: 390, height: 740 });
         expect(await layout(page)).toEqual(opening);
@@ -184,6 +239,7 @@ for (const mobile of [false, true]) {
         const plant = world.plants[window.__testPlantIndex];
         return {
           distance: world.distance, position: point.toArray(), plantZ: plant.position.z,
+          rockZ: world.rocks.position.z,
           ground: sample(650, plant.position.x, plant.position.z),
           trail: sample(6, 0, -20 + world.distance),
           contactError: Math.max(...world.plants.map((plant) => Math.abs(plant.position.y - sample(650, plant.position.x, plant.position.z).height))),
@@ -197,6 +253,7 @@ for (const mobile of [false, true]) {
       expect(nextMountain.position[2] - firstMountain.position[2]).toBeCloseTo(nextMountain.distance - firstMountain.distance, 8);
       expect(nextMountain.position[2]).toBeGreaterThan(firstMountain.position[2] + 40);
       expect(nextMountain.plantZ - firstMountain.plantZ).toBeCloseTo(nextMountain.distance - firstMountain.distance, 6);
+      expect(nextMountain.rockZ - firstMountain.rockZ).toBeCloseTo(nextMountain.distance - firstMountain.distance, 6);
       // A point moving with a plant must stay on the same surface texel.
       // This checks the real plane UV orientation, not just the offset sign.
       for (const surface of ["ground", "trail"]) for (const channel of ["color", "normal"]) {
@@ -222,6 +279,14 @@ for (const mobile of [false, true]) {
       expect(await layout(page)).toEqual(opening);
       await page.locator("#view-toggle").click();
       expect(await page.evaluate(() => window.__saurian.state.view)).toBe("first");
+      if (mobile) {
+        const gap = await page.evaluate(() => {
+          const view = document.getElementById("view-control").getBoundingClientRect();
+          const banner = document.getElementById("toast").getBoundingClientRect();
+          return banner.left - view.right;
+        });
+        expect(gap).toBeGreaterThanOrEqual(6);
+      }
       await page.locator("#pause-button").click();
       const pausedMountain = await worldPosition();
       await page.clock.runFor(1000);
@@ -250,20 +315,27 @@ test.describe("large mobile controls", () => {
     await duck.dispatchEvent("pointerdown", { pointerId: 900, button: 0, pointerType: "touch" });
     await page.mouse.move(155, 754);
     await page.mouse.down();
-    // Allow both hold recognition and the crouch transition to finish.
-    await page.clock.runFor(400);
-    expect(await page.evaluate(() => window.__saurian.state.duck)).toBeGreaterThan(0.9);
+    // WebKit may coalesce RAF callbacks after a clock jump. Wait for the
+    // actual pose to settle while advancing hold recognition and game time.
+    await expect.poll(async () => {
+      await page.clock.runFor(100);
+      return page.evaluate(() => window.__saurian.state.duck);
+    }).toBeGreaterThan(0.9);
     await page.mouse.up();
     await page.clock.runFor(100);
     await expect(duck).toHaveClass(/is-held/);
     expect(await page.evaluate(() => window.__saurian.state.duck)).toBeGreaterThan(0.9);
     await duck.dispatchEvent("pointercancel", { pointerId: 900 });
-    await page.clock.runFor(400);
-    expect(await page.evaluate(() => window.__saurian.state.duck)).toBeLessThan(0.05);
+    await expect.poll(async () => {
+      await page.clock.runFor(100);
+      return page.evaluate(() => window.__saurian.state.duck);
+    }).toBeLessThan(0.05);
     await expect(duck).not.toHaveClass(/is-held/);
     await page.mouse.click(225, 804);
-    await page.clock.runFor(100);
-    expect(await page.evaluate(() => window.__saurian.state.y)).toBeGreaterThan(0.5);
+    await expect.poll(async () => {
+      await page.clock.runFor(50);
+      return page.evaluate(() => window.__saurian.state.y);
+    }).toBeGreaterThan(0.5);
     await page.locator("#view-toggle").tap();
     expect(await page.evaluate(() => window.__saurian.state.view)).toBe("first");
     await page.locator("#pause-button").tap();

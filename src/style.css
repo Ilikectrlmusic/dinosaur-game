@@ -11,6 +11,7 @@
   --line: rgba(243, 237, 223, 0.2);
   --display: "Barlow Condensed", Impact, sans-serif;
   --touch-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  --mobile-status-top: 72px;
 }
 * {
   box-sizing: border-box;
@@ -813,6 +814,15 @@ dialog {
   gap: 25px;
   margin: 30px 0;
 }
+.guide-mobile {
+  display: none;
+}
+.modal .guide-platform {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--orange);
+  margin: 14px 0;
+}
 .guide-number {
   font-family: var(--display);
   font-size: 23px;
@@ -1570,7 +1580,7 @@ select {
     font-size: 23px;
   }
   .playing .view-control {
-    top: calc(max(18px, env(safe-area-inset-top, 0px)) + 80px);
+    top: var(--mobile-status-top);
     left: 18px;
     bottom: auto;
     right: auto;
@@ -1619,6 +1629,17 @@ select {
   .guide-grid {
     gap: 18px;
   }
+  .guide-desktop {
+    display: none;
+  }
+  .guide-mobile {
+    display: block;
+  }
+  .guide-mobile .guide-grid {
+    grid-template-columns: 1fr;
+    margin: 24px 0;
+    gap: 20px;
+  }
   .guide-grid p {
     font-size: 10px;
   }
@@ -1633,8 +1654,14 @@ select {
     font-size: 6px;
   }
   .toast {
-    top: 72px;
+    top: var(--mobile-status-top);
     font-size: 10px;
+  }
+  .playing .toast {
+    max-width: calc(100% - 208px);
+    padding: 11px 12px;
+    white-space: normal;
+    text-align: center;
   }
   .death-stats {
     gap: 20px;

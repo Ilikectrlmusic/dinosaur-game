@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { contactShadowTexture } from "./surface-detail.js";
 import { ScrollingScenery } from "./scrolling-scenery.js";
+import { ROCK_FORMS, BOULDER_FORMS, rockFormationGeometry, boulderGeometry } from "./rock-formations.js";
 
 const groundColorURL = new URL("./assets/ground-color.webp", import.meta.url).href;
 const groundNormalURL = new URL("./assets/ground-normal.webp", import.meta.url).href;
@@ -121,31 +122,6 @@ export function createAtmosphere(world, renderer) {
   world.scene.add(clouds);
 }
 
-function strataGeometry(width, height, segments = 40) {
-  const geometry = new THREE.CylinderGeometry(1, 1, 1, segments, 26);
-  const p = geometry.attributes.position, colors = [];
-  const profile = [[0, 1.18], [0.15, 0.95], [0.38, 0.71], [0.53, 0.64], [0.6, 0.55], [0.82, 0.53], [0.86, 0.41], [1, 0.35]];
-  const tones = [new THREE.Color("#b98a66"), new THREE.Color("#e1bb95"), new THREE.Color("#8f634d")];
-  for (let i = 0; i < p.count; i++) {
-    const h = p.getY(i) + 0.5, angle = Math.atan2(p.getZ(i), p.getX(i));
-    let radius = profile.at(-1)[1];
-    for (let j = 1; j < profile.length; j++) if (h <= profile[j][0]) {
-      const t = (h - profile[j - 1][0]) / (profile[j][0] - profile[j - 1][0]);
-      radius = THREE.MathUtils.lerp(profile[j - 1][1], profile[j][1], t); break;
-    }
-    const erosion = 1 + Math.sin(angle * 7 + h * 4) * 0.075 + Math.cos(angle * 13 - h * 3) * 0.035;
-    const band = Math.sin(h * height * 1.4 + Math.sin(angle * 3) * 0.35);
-    radius *= erosion * (1 + band * 0.012);
-    const x = p.getX(i) * radius * width, z = p.getZ(i) * radius * width;
-    p.setXYZ(i, x, h * height + Math.sin(angle * 5) * 0.2 * h, z);
-    color.copy(tones[0]).lerp(tones[1], Math.max(0, band) * 0.58).lerp(tones[2], Math.max(0, -band) * 0.3);
-    colors.push(color.r, color.g, color.b);
-  }
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 export function createBadlands(world) {
   const material = rockMaterial(world);
   const tile = new THREE.Group();
@@ -170,41 +146,26 @@ export function createBadlands(world) {
   }
   for (let i = 0; i < 18; i++) {
     const side = i % 2 ? 1 : -1;
-    const mesa = new THREE.Mesh(strataGeometry(rand(12, 24), rand(20, 43)), material);
+    const kind = ROCK_FORMS[i % ROCK_FORMS.length];
+    const mesa = new THREE.Mesh(rockFormationGeometry(kind, rand(25, 46),
+      kind === "dome" ? rand(12, 23) : rand(20, 43), i + 1), material);
     mesa.position.set(side * (45 + Math.floor(i / 2) * 17), -0.5, -65 - Math.floor(i / 2) * 35);
     mesa.scale.z = rand(0.65, 1.2);
     mesa.rotation.y = rand(0, 6.3);
     mesa.receiveShadow = true;
     tile.add(mesa);
   }
-  // Broken spires and natural arches bring the geology into the middle distance.
-  for (let i = 0; i < 8; i++) {
-    const spire = new THREE.Mesh(strataGeometry(rand(1.5, 3.4), rand(7, 17), 24), material);
-    const x = (i % 2 ? 1 : -1) * rand(13, 42), z = rand(-155, 15);
-    spire.position.set(x, terrainHeight(x, z), z);
-    spire.castShadow = spire.receiveShadow = true;
-    tile.add(spire);
-  }
-  for (const [x, z] of [[-29, -67], [32, -145]]) {
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-6, 0, 0), new THREE.Vector3(-5, 7, 0), new THREE.Vector3(-1, 10, 0.3),
-      new THREE.Vector3(4, 8, 0), new THREE.Vector3(6, 0, 0),
-    ]);
-    const geometry = new THREE.TubeGeometry(curve, 34, 1.55, 12, false);
-    const p = geometry.attributes.position, colors = [];
-    for (let i = 0; i < p.count; i++) {
-      const y = p.getY(i), factor = 1 + Math.sin(y * 3 + p.getX(i) * 2.6) * 0.06;
-      p.setZ(i, p.getZ(i) * factor);
-      color.set("#b98a6b").lerp(new THREE.Color("#e1bc95"), Math.sin(y * 2) * 0.2 + 0.3);
-      colors.push(color.r, color.g, color.b);
-    }
-    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    geometry.computeVertexNormals();
-    const arch = new THREE.Mesh(geometry, material);
-    arch.position.set(x, terrainHeight(x, z), z);
-    arch.rotation.y = x < 0 ? 0.5 : -0.45;
-    arch.castShadow = arch.receiveShadow = true;
-    tile.add(arch);
+  // Fill the middle distance with low outcrops, thin fins, split buttes and
+  // tapered pillars. Every formation has a solid base; no stone rings.
+  const sizes = { mesa: [10, 6], butte: [6, 12], spire: [3, 15], fin: [6, 11], dome: [9, 5], cluster: [7, 10] };
+  for (let i = 0; i < 18; i++) {
+    const kind = ROCK_FORMS[(i + 2) % ROCK_FORMS.length], [width, height] = sizes[kind];
+    const formation = new THREE.Mesh(rockFormationGeometry(kind, width * rand(0.75, 1.25), height * rand(0.7, 1.3), i + 30), material);
+    const x = (i % 2 ? 1 : -1) * rand(15, 40), z = -190 + i * 12 + rand(-5, 5);
+    formation.position.set(x, -0.4, z);
+    formation.rotation.y = rand(0, Math.PI * 2);
+    formation.castShadow = formation.receiveShadow = true;
+    tile.add(formation);
   }
   world.badlands = new ScrollingScenery(tile);
   world.scene.add(world.badlands);
@@ -313,23 +274,35 @@ export function createVegetation(world, buildCactus) {
 
 export function createRockField(world) {
   const material = rockMaterial(world);
-  const geometry = new THREE.IcosahedronGeometry(1, 1);
-  const p = geometry.attributes.position, colors = [];
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const erosion = 1 + Math.sin(x * 9 + z * 4) * 0.1 + Math.cos(y * 13) * 0.06;
-    p.setXYZ(i, x * erosion, y * erosion, z * erosion);
-    color.set("#c7a586").lerp(new THREE.Color("#785b47"), (1 - y) * 0.2);
-    colors.push(color.r, color.g, color.b);
+  const rocks = new THREE.Group(), bounds = new THREE.Box3();
+  const vertex = new THREE.Vector3(), lowest = new THREE.Vector3();
+  for (const [type, kind] of BOULDER_FORMS.entries()) {
+    const geometry = boulderGeometry(kind, type + 7);
+    const batch = new THREE.InstancedMesh(geometry, material, 48);
+    for (let i = 0; i < 48; i++) {
+      const s = i % 9 === 0 ? rand(1.1, 2.3) : rand(0.08, 0.9);
+      const x = (i % 2 ? 1 : -1) * rand(5.5 + s * 2.2, 30), z = rand(-220, 40);
+      temp.position.set(0, 0, 0);
+      temp.rotation.set(rand(-0.12, 0.12), rand(0, Math.PI * 2), rand(-0.12, 0.12));
+      temp.scale.set(s * rand(0.85, 1.2), s, s); temp.updateMatrix();
+      bounds.copy(geometry.boundingBox).applyMatrix4(temp.matrix);
+      // A rotated bounding box can extend below a rounded rock's real mesh.
+      // Use the actual lowest vertex so every rock meets the terrain.
+      lowest.set(0, Infinity, 0);
+      const positions = geometry.attributes.position;
+      for (let v = 0; v < positions.count; v++) {
+        vertex.fromBufferAttribute(positions, v).applyMatrix4(temp.matrix);
+        if (vertex.y < lowest.y) lowest.copy(vertex);
+      }
+      const ground = Math.min(world.groundHeightAt(x + lowest.x, z + lowest.z), ...[[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([a, b]) =>
+        world.groundHeightAt(x + (a < 0 ? bounds.min.x : bounds.max.x), z + (b < 0 ? bounds.min.z : bounds.max.z))));
+      temp.position.set(x, ground - lowest.y - s * 0.045, z);
+      temp.updateMatrix(); batch.setMatrixAt(i, temp.matrix);
+      batch.setColorAt(i, color.setHSL(rand(0.055, 0.09), rand(0.08, 0.18), rand(0.68, 0.86)));
+    }
+    batch.castShadow = batch.receiveShadow = true;
+    rocks.add(batch);
   }
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3)); geometry.computeVertexNormals();
-  const rocks = new THREE.InstancedMesh(geometry, material, 240);
-  for (let i = 0; i < 240; i++) {
-    const x = (i % 2 ? 1 : -1) * rand(4.5, 65), s = rand(0.06, 1.3);
-    temp.position.set(x, terrainHeight(x, 0) + s * 0.12, rand(-220, 40));
-    temp.rotation.set(rand(0, 0.4), rand(0, 6.3), rand(0, 0.3)); temp.scale.set(s * rand(0.8, 1.5), s * 0.5, s); temp.updateMatrix(); rocks.setMatrixAt(i, temp.matrix);
-  }
-  rocks.castShadow = rocks.receiveShadow = true;
   world.scene.add(rocks); world.rocks = rocks;
   world.rocksTwin = rocks.clone(); world.rocksTwin.position.z = -260; world.scene.add(world.rocksTwin);
 }

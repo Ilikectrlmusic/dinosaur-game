@@ -91,10 +91,11 @@ test("mobile orbit keeps the rider centered; the single track has only jump and 
     const controls = document.querySelector(".touch-icon").getBoundingClientRect();
     const hint = document.querySelector(".camera-drag-hint").getBoundingClientRect();
     const hud = document.getElementById("game-hud").getBoundingClientRect();
-    return { tipTop: tip.top, viewTop: view.top, hudBottom: hud.bottom, viewLeft: view.left, viewBottom: view.bottom, hintBottom: hint.bottom, controlsTop: controls.top };
+    return { tipTop: tip.top, viewTop: view.top, viewLabelTop: document.getElementById("view-toggle").getBoundingClientRect().top, toastTop: parseFloat(getComputedStyle(document.getElementById("toast")).top), hudBottom: hud.bottom, viewLeft: view.left, viewBottom: view.bottom, hintBottom: hint.bottom, controlsTop: controls.top };
   });
   expect(layout.viewTop).toBeLessThan(150);
-  expect(layout.viewTop - layout.hudBottom).toBeGreaterThan(12);
+  expect(layout.viewTop).toBe(layout.toastTop);
+  expect(layout.viewLabelTop - layout.hudBottom).toBeGreaterThanOrEqual(8);
   expect(layout.viewLeft).toBe(18);
   expect(layout.tipTop).toBeGreaterThan(layout.viewBottom + 100);
   expect(layout.viewBottom).toBeLessThan(layout.controlsTop);

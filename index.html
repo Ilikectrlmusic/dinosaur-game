@@ -226,53 +226,56 @@
       ><button type="button" id="touch-jump" aria-label="跳跃"><span class="touch-icon" aria-hidden="true">↑</span></button>
     </div>
     <div class="toast" id="toast" role="status"></div>
-    <dialog id="guide-dialog" class="modal">
+    <dialog id="guide-dialog" class="modal" aria-labelledby="guide-title">
       <button class="modal-close" aria-label="关闭">×</button
       ><span class="eyebrow">THE FIELD GUIDE</span>
-      <h2>荒野生存指南</h2>
-      <p class="modal-intro">
-        在营地选择你的恐龙旅伴。相信它的脚步，也相信你的反应。
-      </p>
-      <div class="guide-grid">
-        <div>
-          <span class="guide-number">01</span>
-          <h3>跨越荆棘</h3>
-          <p>
-            按 <kbd>SPACE</kbd> 或
-            <kbd>↑</kbd>
-            跳跃。仙人掌有高、中、矮三种；300 米后还会出现三连仙人掌，需要一次越过整组。腾空后无法再次跳跃。
-          </p>
+      <h2 id="guide-title">荒野生存指南</h2>
+      <section class="guide-desktop" aria-label="电脑版生存指南">
+        <p class="guide-platform">电脑版 · 键盘与鼠标</p>
+        <p class="modal-intro">在营地选择骑手、坐骑与难度，按 <kbd>SPACE</kbd> 开始旅程。</p>
+        <div class="guide-grid">
+          <div>
+            <span class="guide-number">01</span><h3>把握起跳时机</h3>
+            <p>按 <kbd>SPACE</kbd>、<kbd>↑</kbd> 或 <kbd>W</kbd> 跳跃。仙人掌有高、中、矮三种；300 米后出现的三连仙人掌要一次跳过整组，腾空时无法再次起跳。</p>
+          </div>
+          <div>
+            <span class="guide-number">02</span><h3>分清两种飞鸟</h3>
+            <p>150 米后翼龙开始出现。低飞的要跳过；高飞的必须按住 <kbd>↓</kbd> 或 <kbd>S</kbd> 低头穿过，松开后恢复坐姿。</p>
+          </div>
+          <div>
+            <span class="guide-number">03</span><h3>自由观察荒野</h3>
+            <p>按 <kbd>V</kbd> 切换第一、第三人称。按住鼠标拖动可环顾四周，双击画面让视角回正；前进始终在同一条赛道上。</p>
+          </div>
+          <div>
+            <span class="guide-number">04</span><h3>调整你的节奏</h3>
+            <p><kbd>ESC</kbd> 或 <kbd>P</kbd> 暂停与继续，<kbd>R</kbd> 快速重新开始，<kbd>M</kbd> 切换声音。死亡后也可返回营地更换骑手、坐骑或难度。</p>
+          </div>
         </div>
-        <div>
-          <span class="guide-number">02</span>
-          <h3>留意天空</h3>
-          <p>
-            150 米后翼龙开始出现。贴地低飞的需要跳过；较高的无法跳过，必须按住
-            <kbd>↓</kbd> 或 <kbd>S</kbd> 伏低身体穿过。
-          </p>
+        <p class="guide-footnote">速度会逐渐提升；每前进 1,000 米，恐龙会喷火庆祝。保持看向前方，为下一次跳跃留出准备时间。</p>
+      </section>
+      <section class="guide-mobile" aria-label="手机版生存指南">
+        <p class="guide-platform">手机版 · 触控操作</p>
+        <p class="modal-intro">在营地挑选骑手、坐骑和难度，轻触“进入荒野”出发。</p>
+        <div class="guide-grid">
+          <div>
+            <span class="guide-number">01</span><h3>右下角轻触起跳</h3>
+            <p>轻触右下角区域即可跳跃，不必精确点中圆形按钮。高、中、矮仙人掌都要跳过；300 米后的三连仙人掌需要一次越过整组，空中不能再次起跳。</p>
+          </div>
+          <div>
+            <span class="guide-number">02</span><h3>左下角按住低头</h3>
+            <p>按住左下角区域伏低身体，松手后恢复坐姿。150 米后会遇到翼龙：低飞的轻触右下角跳过，高飞的按住左下角躲避。</p>
+          </div>
+          <div>
+            <span class="guide-number">03</span><h3>滑动观察四周</h3>
+            <p>拖动画面可转动视角，在画面中上部双击可回正。游戏中轻触左上角的人称按钮，可切换第一、第三人称；无需左右切换赛道。</p>
+          </div>
+          <div>
+            <span class="guide-number">04</span><h3>暂停与重新出发</h3>
+            <p>轻触右上角的暂停按钮可休息或返回营地。撞上障碍后，选择“再赴荒野”重新挑战，或选择“返回营地”更换旅伴与难度。</p>
+          </div>
         </div>
-        <div>
-          <span class="guide-number">03</span>
-          <h3>专注前方</h3>
-          <p>
-            在同一条赛道上前进，判断时机跳跃或低头。按
-            <kbd>V</kbd> 切换第一、第三人称，拖动画面环顾四周。
-          </p>
-        </div>
-        <div>
-          <span class="guide-number">04</span>
-          <h3>保持本能</h3>
-          <p>
-            速度会逐渐提升。撞上障碍将结束旅程。<kbd>ESC</kbd> 暂停，<kbd
-              >R</kbd
-            >
-            重新出发。
-          </p>
-        </div>
-      </div>
-      <p class="guide-footnote">
-        手机左下角按住低头，右下角轻触跳跃；圆形按钮周围整片区域都可操作。
-      </p>
+        <p class="guide-footnote">速度会逐渐提升，每前进 1,000 米会喷火庆祝。双手拇指分别照顾左右下角，把注意力留给前方的障碍。</p>
+      </section>
       <button class="secondary-button modal-close-action">
         记住了，出发吧 ↗
       </button>

@@ -57,6 +57,7 @@ export class DesertWorld {
     this.moving = [];
     this.decorations = [];
     this.distance = 0;
+    this.surfacesFinalized = false;
     const hemi = new THREE.HemisphereLight("#d8e4ed", "#897054", 1.2);
     this.scene.add(hemi);
     this.sun = new THREE.DirectionalLight("#ffe0b5", 3.2);
@@ -117,6 +118,9 @@ export class DesertWorld {
     }
     this.renderer = renderer;
     this.ready = Promise.all(this.surfaceTasks || []);
+  }
+  finalizeSurfaces() {
+    this.surfacesFinalized = true;
   }
   setQuality(quality) {
     this.quality = quality;

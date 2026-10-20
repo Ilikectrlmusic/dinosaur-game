@@ -150,6 +150,7 @@ export class DinosaurGait {
         this.travelRecoveryAge = 0;
         this.landingTravelPhase = 0;
         this.secondContactAdvance = 0;
+        this.landingPhaseCorrection = 0;
         this.phase = Math.PI - this.lead * Math.PI;
         this.phaseOffsets[0] = 0;
         this.phaseOffsets[1] = this.lead === 0 ? -TAU : 0;
@@ -168,14 +169,23 @@ export class DinosaurGait {
         }
       }
       const recovering = this.landingAge < LANDING_RECOVERY;
+      if (recovering) {
+        // Catch up with a slightly quicker first push-off. Advancing the lead
+        // leg keeps the second stance moving instead of slowing it almost to
+        // a halt to restore the normal alternating phase relationship.
+        const correction = (Math.PI - this.secondContactAdvance)
+          * smooth(LANDING_STEP_DELAY, 0.5, this.landingAge);
+        this.phase += correction - this.landingPhaseCorrection;
+        this.landingPhaseCorrection = correction;
+      }
       const strideSpan = recovering ? this.landingSpan : this.span;
       pose.mode = recovering ? "landing" : "running";
       pose.legs.forEach((leg, i) => {
         const trailing = i !== this.lead;
         let phase = this.phase + i * Math.PI + this.phaseOffsets[i];
         if (recovering && trailing) {
-          // The second foot takes a shorter first step. Let its next stance
-          // linger rather than whipping the planted first leg backward.
+          // The second foot takes a shorter first step, then immediately
+          // travels backward through a normal, uninterrupted support phase.
           if (this.landingAge < LANDING_STEP_DELAY) {
             const t = this.landingAge / LANDING_STEP_DELAY;
             const blend = smooth(0, 1, t);
@@ -188,9 +198,13 @@ export class DinosaurGait {
           }
           const correction = Math.PI - this.secondContactAdvance;
           // Use an unwrapped phase to keep contact detection continuous.
-          phase += correction * (1 - smooth(LANDING_STEP_DELAY, LANDING_RECOVERY, this.landingAge));
+          phase += correction - this.landingPhaseCorrection;
         }
         runningLeg(leg, phase, strideSpan);
+        // The first recovery step is compact: lift the knee just enough to
+        // keep moving, then regain the full running arc as the body rises.
+        if (recovering && !trailing)
+          leg.lift *= mix(0.65, 1, smooth(0.35, LANDING_RECOVERY, this.landingAge));
         const previous = this.previousLegPhases[i];
         if ((touchedDown && !trailing) || (recovering && trailing && before < LANDING_STEP_DELAY && this.landingAge >= LANDING_STEP_DELAY)) {
           pose.contacts |= 1 << i;
@@ -200,7 +214,7 @@ export class DinosaurGait {
         }
         this.previousLegPhases[i] = phase;
       });
-      pose.strideWeight = recovering ? smooth(0.16, LANDING_RECOVERY, this.landingAge) : 1;
+      pose.strideWeight = recovering ? smooth(0.02, 0.28, this.landingAge) : 1;
       if (recovering) {
         pose.drop = (0.15 * impact(this.landingAge, 0.095) + 0.035 * impact(this.landingAge - LANDING_STEP_DELAY, 0.08)) * (1 - smooth(0.36, LANDING_RECOVERY, this.landingAge));
         pitch = -pose.drop * 0.4;

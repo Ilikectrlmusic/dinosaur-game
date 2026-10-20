@@ -21,6 +21,14 @@ export function terrainHeight(x, z) {
 function loadMaps(world, material, colorURL, normalURL, repeat) {
   const loader = new THREE.TextureLoader();
   const task = Promise.all([loader.loadAsync(colorURL), loader.loadAsync(normalURL)]).then(([map, normal]) => {
+    // A slow first visit can reach the loading-screen deadline before these
+    // arrive. Keep the already visible fallback for this visit instead of
+    // changing the terrain's palette and UV scale in the middle of a run.
+    if (world.surfacesFinalized) {
+      map.dispose();
+      normal.dispose();
+      return;
+    }
     map.colorSpace = THREE.SRGBColorSpace;
     for (const texture of [map, normal]) {
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;

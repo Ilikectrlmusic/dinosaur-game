@@ -39,7 +39,9 @@ test("desktop saves each GPU preference, applies it on reload and preserves othe
   await openGame(page);
   expect(await page.evaluate(() => window.__powerRequests[0])).toBe("default");
   const original = page.locator("#original-game");
-  await expect(original).toHaveCSS("text-decoration-line", "underline");
+  await expect(original).toHaveCSS("text-decoration-line", "none");
+  await expect(original.locator(".original-label")).toHaveCSS("text-decoration-line", "underline");
+  await expect(original.locator("span").last()).toHaveCSS("text-decoration-line", "none");
   expect(await original.evaluate((element) => getComputedStyle(element).color)).toBe(
     await page.locator("#nav-guide").evaluate((element) => getComputedStyle(element).color),
   );
@@ -79,6 +81,8 @@ test.describe("phone preferences", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   test("desktop GPU controls stay hidden and saving other settings needs no reload", async ({ page }) => {
     await openGame(page);
+    await expect(page.locator("#original-game .original-label")).toBeVisible();
+    await expect(page.locator("#original-game span").last()).toBeHidden();
     expect(await page.evaluate(() => window.__powerRequests[0])).toBe("high-performance");
     await page.locator("#nav-settings").tap();
     await expect(page.locator("#performance-setting")).toBeHidden();

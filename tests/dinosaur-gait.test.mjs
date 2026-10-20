@@ -200,3 +200,28 @@ test("landing briefly reduces travel, smoothly recovers, and cannot be cancelled
   }
   assert.ok(Math.max(...losses) - Math.min(...losses) < 0.005, "travel loss is stable across frame rates");
 });
+
+test("landing flows into the next stride without holding both legs or stalling the second planted foot", () => {
+  for (const fps of [30, 60, 120]) for (const speed of [10, 14, 36]) {
+    const gait = new DinosaurGait(), dt = 1 / fps;
+    gait.update(0.13, 1, 0, dt, 0, speed);
+    gait.update(0.9, 1, 0.01, dt, -10, speed);
+    gait.update(1, 1, 0, dt, 0, speed);
+    const trailing = 1 - gait.lead;
+    let previous = structuredClone(gait.pose), firstSwing = Infinity, slowestStance = Infinity, plantedSamples = 0;
+    for (let frame = 1; frame * dt < 0.7; frame++) {
+      const age = frame * dt, pose = gait.update(1 + age, 1, 0, dt, 0, speed);
+      if (pose.legs[gait.lead].lift > 0.02) firstSwing = Math.min(firstSwing, age);
+      if (age > 0.18 && age < 0.6 && previous.legs[trailing].lift === 0 && pose.legs[trailing].lift === 0) {
+        slowestStance = Math.min(slowestStance, (pose.legs[trailing].z - previous.legs[trailing].z) / dt);
+        plantedSamples++;
+      }
+      if (age >= 0.3) assert.ok(pose.strideWeight > 0.9, "body motion must resume while impact absorption finishes");
+      assert.ok(Math.abs(pose.phase - previous.phase) < 25 * dt, "stride phase cannot snap when recovery ends");
+      previous = structuredClone(pose);
+    }
+    assert.ok(firstSwing <= 0.34, `next step starts promptly at ${fps} FPS and ${speed} m/s: ${firstSwing}`);
+    assert.ok(plantedSamples >= 3);
+    assert.ok(slowestStance > 2.5, `the trailing foot cannot linger in place: ${slowestStance}`);
+  }
+});

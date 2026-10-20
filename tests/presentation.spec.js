@@ -1,5 +1,59 @@
 import { test, expect } from "@playwright/test";
 
+for (const late of [false, true]) {
+  test(`first-visit ground appearance stays stable after ${late ? "late" : "ready"} texture downloads`, async ({ page }) => {
+    await page.clock.install();
+    let release;
+    const downloads = new Promise((resolve) => { release = resolve; });
+    let requests = 0;
+    await page.route("**/ground-*.webp*", async (route) => {
+      requests++;
+      if (late) await downloads;
+      await route.continue();
+    });
+    await page.route("**/src/main.js*", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, body: (await response.text()).replaceAll(
+        "renderer.render(world.scene, camera);", "if (!window.__skipGraphics) renderer.render(world.scene, camera);",
+      ).replace("// A small read-only diagnostic surface", "window.__surfaceWorld = world; // A small read-only diagnostic surface") });
+    });
+    await page.addInitScript(() => localStorage.setItem("saurian-preferences", JSON.stringify({ quality: "low", motion: false, sound: false })));
+    try {
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => window.__saurian?.renderer.render.frame > 2);
+      await page.evaluate(() => { window.__skipGraphics = true; });
+      await expect.poll(() => requests).toBe(2);
+      if (!late) await page.evaluate(() => window.__surfaceWorld.ready);
+      await page.clock.fastForward(5000);
+      await page.clock.runFor(1000);
+      // WebKit can deliver the promise/RAF that hides the loader after the
+      // clock jump completes; keep advancing until its fade timer finishes.
+      await expect.poll(async () => {
+        await page.clock.runFor(250);
+        return page.locator("#loading").count();
+      }).toBe(0);
+      await page.locator("#start-button").click();
+      await page.clock.runFor(2000);
+      expect(await page.evaluate(() => window.__saurian.state.mode)).toBe("running");
+      await page.locator("#pause-button").click();
+      const surface = () => page.evaluate(() => {
+        const world = window.__surfaceWorld, material = world.ground.material;
+        return { color: material.map.uuid, normal: material.normalMap?.uuid ?? null,
+          sand: world.sand.uuid, tint: material.color.getHexString(),
+          shaderVersion: material.version, uv: material.map.offset.toArray() };
+      });
+      const before = await surface();
+      if (late) expect(before.normal).toBeNull();
+      else expect(before.normal).not.toBeNull();
+      release();
+      await page.evaluate(() => window.__surfaceWorld.ready);
+      expect(await surface()).toEqual(before);
+    } finally {
+      release();
+    }
+  });
+}
+
 async function openControlledGame(page) {
   await page.clock.install({ time: new Date("2026-10-19T08:00:00Z") });
   await page.route("**/src/main.js*", async (route) => {

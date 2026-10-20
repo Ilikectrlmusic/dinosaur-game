@@ -874,6 +874,7 @@ function init() {
     lastFrame = performance.now();
     requestAnimationFrame(frame);
     Promise.race([Promise.all([world.ready, surfaceReady]), new Promise((resolve) => setTimeout(resolve, 4500))]).then(() => {
+      world.finalizeSurfaces();
       requestAnimationFrame(() => {
         $("loading").style.opacity = "0";
         setTimeout(() => $("loading")?.remove(), 750);

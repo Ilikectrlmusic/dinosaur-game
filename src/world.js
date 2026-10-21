@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { buildCactus, buildPterosaur } from "./creatures.js";
 import { terrainHeight, createAtmosphere, enhanceGround, createBadlands,
   createVegetation, createRockField, updateLandscape } from "./landscape-detail.js";
+import { GroundEffects } from "./ground-effects.js";
 
 export const rand = (min, max) => min + Math.random() * (max - min);
 const temp = new THREE.Object3D();
@@ -252,44 +253,11 @@ export class DesertWorld {
       }),
     );
     this.scene.add(this.dust);
-    this.puffTexture = new THREE.CanvasTexture(canvas);
-    const puffGeo = new THREE.BufferGeometry(),
-      puffPositions = new Float32Array(80 * 3);
-    puffGeo.setAttribute(
-      "position",
-      new THREE.BufferAttribute(puffPositions, 3),
-    );
-    this.puffs = new THREE.Points(
-      puffGeo,
-      new THREE.PointsMaterial({
-        color: "#c0a47d",
-        map: this.puffTexture,
-        size: 0.8,
-        transparent: true,
-        opacity: 0.3,
-        depthWrite: false,
-      }),
-    );
-    this.scene.add(this.puffs);
-    this.puffData = Array.from({ length: 80 }, () => ({
-      x: 0,
-      y: -10,
-      z: 0,
-      life: 0,
-      vx: 0,
-    }));
+    this.groundEffects = new GroundEffects(this.scene,
+      (x, z) => this.groundHeightAt(x, z), this.contactShadow.material.map);
   }
   emitDust(x, z, amount = 3) {
-    for (let j = 0; j < amount; j++) {
-      const p = this.puffData.find((p) => p.life <= 0);
-      if (p) {
-        p.x = x + rand(-0.3, 0.3);
-        p.y = 0.12;
-        p.z = z + rand(-0.2, 0.3);
-        p.life = 1;
-        p.vx = rand(-0.6, 0.6);
-      }
-    }
+    this.groundEffects.emit(x, z, "crash", amount / 16);
   }
   update(dt, time, speed = 0, mountHeight = 0) {
     this.distance += speed * dt;
@@ -323,16 +291,5 @@ export class DesertWorld {
       pp.setX(i, pp.getX(i) + Math.sin(time + i) * dt * 0.08);
     }
     pp.needsUpdate = true;
-    const p = this.puffs.geometry.attributes.position;
-    this.puffData.forEach((d, i) => {
-      d.life -= dt * 0.7;
-      if (d.life > 0) {
-        d.x += d.vx * dt;
-        d.y += dt * 0.45;
-        d.z += speed * dt * 0.6 + dt;
-      }
-      p.setXYZ(i, d.x, d.life > 0 ? d.y : -100, d.z);
-    });
-    p.needsUpdate = true;
   }
 }

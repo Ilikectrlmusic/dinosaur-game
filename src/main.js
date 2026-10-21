@@ -211,6 +211,7 @@ function resetDino() {
   dino = buildDinosaur(state.rider, state.mount);
   world.scene.add(dino.root);
   dino.root.position.set(0, 0, 0);
+  world.groundEffects.reset();
 }
 function toggleView() {
   dragLook.reset();
@@ -338,11 +339,17 @@ function goHome() {
   persist();
 }
 function jump() {
-  if (state.mode !== "running" || state.y > 0.03) return;
+  if (state.mode !== "running" || state.y > 0.03 || state.vy > 0) return;
+  const support = dino.gait.pose.legs[0].lift <= dino.gait.pose.legs[1].lift ? 0 : 1;
+  footImpact(dino.legs[support], "takeoff");
   state.vy = JUMP_VELOCITY;
   state.ducking = false;
   audio.jump();
-  world.emitDust(state.x, 0, 12);
+}
+function footImpact(leg, kind, strength = 1) {
+  leg.foot.localToWorld(dino.contactPosition.set(0, 0, -0.15));
+  world.groundEffects.emit(dino.contactPosition.x, dino.contactPosition.z,
+    kind, strength, dino.sizeScale, dino.root.rotation.y);
 }
 function spawnObstacle(spec, z = -95) {
   const bird = spec.type === "bird";
@@ -451,6 +458,7 @@ function updateGameplay(dt) {
   animateDinosaur(dino, state.time, 1, state.duck, state.y, dt, fire.strength, state.vy, cruisingSpeed);
   state.speed = cruisingSpeed * dino.gait.pose.speedScale;
   state.distance += state.speed * dt;
+  world.groundEffects.update(dt, state.speed);
   fire.update(dt, dino.head, state.speed);
   state.spawn -= dt;
   if (state.spawn <= 0) spawnWave();
@@ -500,9 +508,8 @@ function updateGameplay(dt) {
   const { contacts, landingContacts } = dino.gait.pose;
   dino.legs.forEach((leg, i) => {
     if (!(contacts & (1 << i))) return;
-    leg.foot.getWorldPosition(dino.contactPosition);
     const landing = landingContacts & (1 << i);
-    world.emitDust(dino.contactPosition.x, dino.contactPosition.z, landing ? 10 : 4);
+    footImpact(leg, landing ? "landing" : "run", landing && i !== dino.gait.lead ? 0.7 : 1);
     if (landing) audio.land(i === dino.gait.lead ? 1 : 0.55);
     else audio.step();
   });
@@ -600,11 +607,13 @@ function frame(now) {
   }
   state.time += dt;
   const distanceBefore = state.distance;
+  let groundEffectsElapsed = 0;
   if (state.mode === "running") {
     let remaining = dt;
     while (remaining > 0 && state.mode === "running") {
       const step = Math.min(remaining, 1 / 60);
       updateGameplay(step);
+      groundEffectsElapsed += step;
       remaining -= step;
     }
   } else if (state.mode === "menu") {
@@ -625,6 +634,10 @@ function frame(now) {
     }
   }
   if (state.mode === "dead") return;
+  // Running advances dust/prints alongside each fixed physics step, so a
+  // contact late in a slow frame is not moved by the whole frame's travel.
+  world.groundEffects.update(dt - groundEffectsElapsed);
+  world.groundEffects.followFeet(physics || state.mode === "crashed" ? null : dino, state.quality);
   const speed = state.mode === "running" ? state.speed : 0;
   // The same integrated travel drives plants, ground textures and obstacles,
   // even when a slow rendered frame contains several landing physics steps.
@@ -636,6 +649,7 @@ function frame(now) {
     world.setRenderScale(renderBudget.ratio / renderBudget.maxRatio);
   }
   fire.setViewport(renderer.domElement.height, camera.fov, state.view === "first");
+  world.groundEffects.setViewport(renderer.domElement.height, camera.fov);
   renderer.render(world.scene, camera);
 }
 function bindUI() {
@@ -900,6 +914,8 @@ function init() {
             sound: state.sound,
             milestone: state.milestone,
             fire: { active: fire.active, bursts: fire.bursts, particles: fire.alive, strength: fire.strength, origin: fire.origin.toArray() },
+            groundEffects: { particles: world.groundEffects.alive, footprints: world.groundEffects.tracksAlive,
+              emissions: { ...world.groundEffects.emissions }, lastImpact: world.groundEffects.lastImpact && { ...world.groundEffects.lastImpact } },
             obstacles: obstacles.map((o) => ({
               type: o.userData.type,
               variant: o.userData.variant,

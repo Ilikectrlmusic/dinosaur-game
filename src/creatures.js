@@ -505,6 +505,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
   jaw.position.set(0, -0.18, 0.05);
   head.add(jaw);
   ellipsoid(jaw, belly, [0, -0.08, -0.57], [0.294, 0.13, 0.54]);
+  const forelimbs = [];
   for (const s of [-1, 1]) {
     ellipsoid(
       head,
@@ -566,25 +567,30 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
       [0.15, 0.29, 0.17],
       [0.35, 0, s * 0.35],
     );
+    const elbow = new THREE.Group();
+    elbow.position.set(s * 0.12, -0.35, -0.12);
+    arm.add(elbow);
+    ellipsoid(arm, skin, elbow.position.toArray(), [0.105, 0.105, 0.105]);
     segment(
-      arm,
+      elbow,
       skin,
-      [s * 0.12, -0.35, -0.12],
-      [s * 0.1, -0.5, -0.47],
+      [0, 0, 0],
+      [-s * 0.02, -0.15, -0.35],
       0.09,
       0.07,
     );
-    ellipsoid(arm, skin, [s * 0.1, -0.51, -0.48], [0.11, 0.07, 0.12]);
+    ellipsoid(elbow, skin, [-s * 0.02, -0.16, -0.36], [0.11, 0.07, 0.12]);
     for (let t = 0; t < 3; t++)
       segment(
-        arm,
+        elbow,
         horn,
-        [s * 0.1 + (t - 1) * 0.06, -0.52, -0.49],
-        [s * 0.1 + (t - 1) * 0.07, -0.59, -0.68],
+        [-s * 0.02 + (t - 1) * 0.06, -0.17, -0.37],
+        [-s * 0.02 + (t - 1) * 0.07, -0.24, -0.56],
         0.025,
         0.005,
       );
     arm.scale.setScalar(definition.armScale);
+    forelimbs.push({ shoulder: arm, elbow, side: s, motionScale: Math.max(0.6, definition.armScale) });
   }
   const legs = [];
   for (const s of [-1, 1]) {
@@ -741,6 +747,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     head,
     jaw,
     legs,
+    forelimbs,
     gait: new DinosaurGait(),
     contactPosition: new THREE.Vector3(),
     tail,
@@ -793,6 +800,20 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
     (run ? motion.bob * 0.35 : breathing * 0.025) - motion.drop * 0.5;
   dino.head.rotation.x = duck * 0.14 + Math.sin(time * 0.7) * 0.018 + fire * 0.07 + motion.pitch * 0.3;
   dino.jaw.rotation.x = 0.03 + Math.max(0, Math.sin(time * 0.6)) * 0.035 - fire * 0.45;
+  dino.forelimbs.forEach(({ shoulder, elbow, side, motionScale }, i) => {
+    const phase = stride + i * Math.PI - 0.55;
+    const air = dino.gait.airborne ? THREE.MathUtils.smoothstep(dino.gait.flightAge, 0, 0.18) : 0;
+    const swing = run ? Math.sin(phase) * 0.10 * motion.strideWeight : breathing * 0.018;
+    // Small opposite swings, delayed elbow flexion and a soft tuck in flight.
+    // Both joints stay attached to the chest as it absorbs each landing.
+    shoulder.rotation.x = THREE.MathUtils.damp(shoulder.rotation.x,
+      (0.025 + swing + air * 0.13 + duck * 0.10 - motion.pitch * 0.35 + motion.drop * 0.2) * motionScale, 16, dt);
+    shoulder.rotation.z = THREE.MathUtils.damp(shoulder.rotation.z,
+      side * (0.015 + (run ? Math.sin(phase - 0.5) * 0.018 * motion.strideWeight : 0)), 14, dt);
+    elbow.rotation.x = THREE.MathUtils.damp(elbow.rotation.x,
+      (0.045 + (run ? Math.sin(phase - 0.75) * 0.045 * motion.strideWeight : breathing * 0.012)
+        + air * 0.09 + motion.drop * 0.16) * motionScale, 12, dt);
+  });
   dino.legs.forEach((leg, i) => {
     const pose = motion.legs[i];
     const support = supportHeight(leg.soleProfile, pose.pitch);

@@ -37,6 +37,7 @@ import { surfaceReady } from "./surface-detail.js";
 import { FireBreath } from "./fire-breath.js";
 import { mountDefinition } from "./mounts.js";
 import { RenderBudget } from "./render-budget.js";
+import { DIFFICULTY_NAMES, personalBests, recordBest, animatedRecord } from "./personal-best.js";
 
 const $ = (id) => document.getElementById(id);
 const PERFORMANCE_PREFERENCES = {
@@ -57,7 +58,7 @@ const state = {
   difficulty: CONFIG[saved.difficulty] ? saved.difficulty : "easy",
   view: saved.view === "first" ? "first" : "third",
   distance: 0,
-  best: saved.best || {},
+  best: personalBests(saved.best),
   speed: 0,
   x: 0,
   y: 0,
@@ -99,6 +100,7 @@ let renderer,
   crashAge = 0,
   roundGeneration = 0,
   crashIssue = null;
+let recordTween = null, newPersonalBest = false;
 const targetCamera = new THREE.Vector3(),
   targetLook = new THREE.Vector3(),
   cameraLook = new THREE.Vector3(-3, 1.9, 1.5),
@@ -197,7 +199,21 @@ function updatePerformanceSetting() {
   $("settings-save").textContent = pending ? "保存并重新加载 ↗" : "保存并返回 ↗";
 }
 function updateCampBest() {
-  $("camp-best").innerHTML = Math.floor(state.best[state.difficulty] || 0) + "<small> M</small>";
+  const best = state.best[state.difficulty], difficulty = DIFFICULTY_NAMES[state.difficulty];
+  $("camp-best").innerHTML = best + "<small> M</small>";
+  $("camp-best-difficulty").textContent = difficulty + " · 个人最佳";
+  $("camp-best").setAttribute("aria-label", `${difficulty}难度个人最佳 ${best} 米`);
+}
+function clearRecordAnimation() {
+  recordTween = null;
+  newPersonalBest = false;
+  for (const id of ["best", "final-best"]) $(id).classList.remove("record-highlight");
+}
+function updateRecordAnimation(dt) {
+  if (!recordTween) return;
+  recordTween.elapsed += dt;
+  $("best").firstChild.nodeValue = animatedRecord(recordTween.from, recordTween.to, recordTween.elapsed) + " ";
+  if (recordTween.elapsed >= 0.95) recordTween = null;
 }
 function resetDino() {
   if (physics) {
@@ -273,6 +289,7 @@ function clearObstacles() {
   obstacles = [];
 }
 function startGame() {
+  clearRecordAnimation();
   clearTimeout(deathTimeout);
   roundGeneration++;
   crashIssue = null;
@@ -311,7 +328,8 @@ function startGame() {
 }
 function goHome() {
   if (["running", "paused"].includes(state.mode))
-    state.best[state.difficulty] = Math.max(state.best[state.difficulty] || 0, Math.floor(state.distance));
+    recordBest(state.best, state.difficulty, state.distance);
+  clearRecordAnimation();
   clearTimeout(deathTimeout);
   roundGeneration++;
   crashIssue = null;
@@ -377,9 +395,12 @@ function finishCrash(generation) {
   clearTimeout(deathTimeout);
   resetInputs();
   state.mode = "dead";
+  recordTween = null;
+  $("best").firstChild.nodeValue = state.best[state.difficulty] + " ";
   audio.update(0, 0, false, false);
   document.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
   deathOverlay.open();
+  $("final-best").classList.toggle("record-highlight", newPersonalBest);
 }
 function crash(obstacle) {
   if (state.mode !== "running") return;
@@ -392,15 +413,21 @@ function crash(obstacle) {
   document.body.classList.add("dead");
   $("game-tip").classList.add("hidden");
   $("mobile-controls").classList.add("hidden");
-  const isBest =
-    Math.floor(state.distance) > (state.best[state.difficulty] || 0);
-  if (isBest) state.best[state.difficulty] = Math.floor(state.distance);
+  const record = recordBest(state.best, state.difficulty, state.distance);
+  newPersonalBest = record.isNew;
+  if (newPersonalBest) {
+    $("best").classList.add("record-highlight");
+    recordTween = { from: record.previous, to: record.value, elapsed: 0 };
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) updateRecordAnimation(1);
+  }
   persist();
+  updateHUD();
   $("final-distance").innerHTML =
     Math.floor(state.distance) + "<small> M</small>";
   $("final-best").innerHTML =
     (state.best[state.difficulty] || 0) + "<small> M</small>";
-  $("new-best").classList.toggle("hidden", !isBest);
+  $("new-best").classList.toggle("hidden", !newPersonalBest);
+  $("final-best-label").firstChild.nodeValue = DIFFICULTY_NAMES[state.difficulty] + "个人最佳 ";
   $("death-reason").textContent =
     obstacle.userData.type === "bird"
       ? obstacle.userData.variant === "low"
@@ -634,6 +661,7 @@ function frame(now) {
     }
   }
   if (state.mode === "dead") return;
+  updateRecordAnimation(dt);
   // Running advances dust/prints alongside each fixed physics step, so a
   // contact late in a slow frame is not moved by the whole frame's travel.
   world.groundEffects.update(dt - groundEffectsElapsed);
@@ -903,6 +931,7 @@ function init() {
             rider: state.rider,
             mount: dino.mountId,
             difficulty: state.difficulty,
+            best: { ...state.best },
             view: state.view,
             distance: state.distance,
             speed: state.speed,

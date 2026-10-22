@@ -73,6 +73,44 @@ test("mount selection survives rider changes, reload, retry and camp without ove
   expect(errors).toEqual([]);
 });
 
+test("forelimbs articulate continuously during running, jumping and landing for every mount", async ({ page }) => {
+  await openGame(page);
+  const samples = await page.evaluate(async () => {
+    const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
+    const { MOUNTS } = await import("/src/mounts.js");
+    const { advanceJump, JUMP_VELOCITY } = await import("/src/rules.js");
+    const result = [];
+    for (const mount of MOUNTS) for (const fps of [30, 60, 120]) {
+      const dino = buildDinosaur(0, mount.id), dt = 1 / fps;
+      const ranges = dino.forelimbs.map(() => ({ min: Infinity, max: -Infinity, previous: null }));
+      let y = 0, vy = 0, fastest = 0, maxFlex = 0, attached = true;
+      for (let frame = 0; frame < fps * 2; frame++) {
+        if (frame === Math.round(fps * 0.4)) vy = JUMP_VELOCITY;
+        ({ y, vy } = advanceJump(y, vy, dt));
+        dino.root.position.y = y;
+        animateDinosaur(dino, frame * dt, 1, 0, y, dt, 0, vy);
+        dino.forelimbs.forEach(({ shoulder, elbow }, i) => {
+          const range = ranges[i], values = [shoulder.rotation.x, shoulder.rotation.z, elbow.rotation.x];
+          range.min = Math.min(range.min, values[0]); range.max = Math.max(range.max, values[0]);
+          if (range.previous) values.forEach((value, j) => { fastest = Math.max(fastest, Math.abs(value - range.previous[j]) / dt); });
+          range.previous = values;
+          maxFlex = Math.max(maxFlex, Math.abs(elbow.rotation.x));
+          attached &&= shoulder.parent === dino.body && elbow.parent === shoulder;
+        });
+      }
+      result.push({ mount: mount.id, fps, swing: Math.min(...ranges.map((r) => r.max - r.min)), fastest, maxFlex, attached });
+    }
+    return result;
+  });
+  for (const sample of samples) {
+    expect(sample.attached, JSON.stringify(sample)).toBe(true);
+    expect(sample.swing).toBeGreaterThan(0.06);
+    expect(sample.fastest).toBeLessThan(3);
+    expect(sample.maxFlex).toBeGreaterThan(0.04);
+    expect(sample.maxFlex).toBeLessThan(0.25);
+  }
+});
+
 test("mounts have subtly decreasing body sizes while every rider keeps the same size and seat height", async ({ page }) => {
   await openGame(page);
   const sizes = await page.evaluate(async () => {

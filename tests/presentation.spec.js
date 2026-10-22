@@ -54,7 +54,7 @@ for (const late of [false, true]) {
   });
 }
 
-async function openControlledGame(page) {
+async function openControlledGame(page, preferences = {}) {
   await page.clock.install({ time: new Date("2026-10-19T08:00:00Z") });
   await page.route("**/src/main.js*", async (route) => {
     const response = await route.fetch();
@@ -69,9 +69,11 @@ async function openControlledGame(page) {
       "this.distance = 0;", "this.distance = 0; window.__testWorld = this; window.__testThree = THREE;",
     ) });
   });
-  await page.addInitScript(() => localStorage.setItem(
-    "saurian-preferences", JSON.stringify({ quality: "low", motion: false, sound: false, difficulty: "easy", best: { easy: 321, normal: 6543, hard: 98765 } }),
-  ));
+  await page.addInitScript((preferences) => {
+    if (!localStorage.getItem("saurian-preferences")) localStorage.setItem(
+      "saurian-preferences", JSON.stringify({ quality: "low", motion: false, sound: false, difficulty: "easy", best: { easy: 321, normal: 6543, hard: 98765 }, ...preferences }),
+    );
+  }, preferences);
   await page.goto("/");
   await page.waitForFunction(() => window.__saurian?.renderer.render.frame > 2);
   await page.evaluate(() => document.fonts.ready);
@@ -161,6 +163,60 @@ test("varied near rocks meet the terrain and keep the running lane clear", async
   expect(result.count).toBeGreaterThanOrEqual(200);
   expect(result.largestGap).toBeLessThan(0);
   expect(result.innerEdge).toBeGreaterThan(4.5);
+});
+
+test("new records animate during the crash, remain separate by difficulty and fit the whole desktop result", async ({ page }) => {
+  test.setTimeout(120000);
+  await openControlledGame(page, { best: { easy: 1, normal: 543, hard: 987 } });
+  for (const [id, name, score] of [["hard", "极限", 987], ["normal", "冒险", 543], ["easy", "悠然", 1]]) {
+    await page.locator(`[data-difficulty="${id}"]`).click();
+    await expect(page.locator("#camp-best-difficulty")).toContainText(name);
+    await expect(page.locator("#camp-best")).toHaveText(`${score} M`);
+  }
+  const reachMode = async (mode) => expect.poll(async () => {
+    await page.clock.runFor(100);
+    return page.evaluate(() => window.__saurian.state.mode);
+  }, { timeout: 20000, intervals: [25, 50, 100] }).toBe(mode);
+  await page.locator("#start-button").click();
+  await reachMode("crashed");
+  const record = await page.evaluate(() => window.__saurian.state.best.easy);
+  expect(record).toBeGreaterThan(1);
+  await expect(page.locator("#distance")).toHaveText(`${record} M`);
+  await expect(page.locator("#best")).toHaveClass(/record-highlight/);
+  expect(Number.parseInt(await page.locator("#best").innerText())).toBeLessThan(record);
+  await reachMode("dead");
+  await expect(page.locator("#best")).toHaveText(`${record} M`);
+  await expect(page.locator("#final-best")).toHaveClass(/record-highlight/);
+  await expect(page.locator("#new-best")).toBeVisible();
+  await page.locator("#death-reason").evaluate((el) => { el.textContent = "没能一次越过三连仙人掌。留意整组的长度，让起跳和落地都避开荆棘。"; });
+  for (const [width, height] of [[1920, 1080], [1440, 900], [1366, 768], [1280, 720], [900, 650], [800, 600], [1024, 500], [900, 450]]) {
+    await page.setViewportSize({ width, height });
+    const size = await page.locator("#death-dialog").evaluate((el) => {
+      const rect = el.getBoundingClientRect(), shortcut = document.querySelector(".death-shortcut").getBoundingClientRect();
+      return { client: el.clientHeight, scroll: el.scrollHeight, top: rect.top, bottom: rect.bottom, shortcutBottom: shortcut.bottom };
+    });
+    expect(size.scroll, `${width}×${height}`).toBeLessThanOrEqual(size.client);
+    expect(size.top).toBeGreaterThanOrEqual(16);
+    expect(size.bottom).toBeLessThanOrEqual(height - 16);
+    expect(size.shortcutBottom).toBeLessThan(size.bottom);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".death-shortcut")).toBeHidden();
+  await page.locator("#retry-button").click();
+  await expect(page.locator("#best")).not.toHaveClass(/record-highlight/);
+  await expect(page.locator("#best")).toHaveText(`${record} M`);
+  await page.locator("#pause-button").click();
+  await page.locator("#pause-home").click();
+  await page.locator('[data-difficulty="hard"]').click();
+  await expect(page.locator("#camp-best")).toHaveText("987 M");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("saurian-preferences")).best)).toEqual({ easy: record, normal: 543, hard: 987 });
+  await page.locator("#start-button").click();
+  await reachMode("crashed");
+  await expect(page.locator("#best")).not.toHaveClass(/record-highlight/);
+  await reachMode("dead");
+  await expect(page.locator("#new-best")).toBeHidden();
+  await expect(page.locator("#final-best")).not.toHaveClass(/record-highlight/);
+  await expect(page.locator("#final-best")).toHaveText("987 M");
 });
 
 for (const mobile of [false, true]) {

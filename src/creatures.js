@@ -749,6 +749,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     legs,
     forelimbs,
     gait: new DinosaurGait(),
+    headMotion: { neckY: 0, headY: 0, neckPitch: 0, headPitch: 0 },
     contactPosition: new THREE.Vector3(),
     tail,
     saddle,
@@ -789,16 +790,25 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
     duck * 0.62 - motion.drop;
   dino.body.rotation.x = duck * 0.16 + motion.pitch;
   dino.body.rotation.z = run ? Math.sin(stride) * 0.012 * motion.strideWeight : 0;
+  const nod = dino.headMotion, weight = run ? motion.strideWeight : 0;
+  // The neck absorbs each stride; the smaller head movement follows with a
+  // little delay. Damp the extra offsets so flight and recovery stay smooth.
+  nod.neckY = THREE.MathUtils.damp(nod.neckY,
+    Math.sin(stride * 2 - 0.35) * 0.035 * weight + (run ? 0 : breathing * 0.006), 18, dt);
+  nod.headY = THREE.MathUtils.damp(nod.headY, nod.neckY * 0.68, 14, dt);
+  nod.neckPitch = THREE.MathUtils.damp(nod.neckPitch,
+    Math.sin(stride * 2 - 0.7) * 0.016 * weight + (run ? 0 : breathing * 0.003), 16, dt);
+  nod.headPitch = THREE.MathUtils.damp(nod.headPitch, -nod.neckPitch * 0.55, 12, dt);
   dino.neck.position.y =
     2.49 -
     duck * 1.04 +
-    (run ? motion.bob * 0.65 : breathing * 0.02) - motion.drop * 0.65;
-  dino.neck.rotation.x = -duck * 0.35 + motion.pitch * 0.5;
+    (run ? motion.bob * 0.65 : breathing * 0.02) - motion.drop * 0.65 + nod.neckY;
+  dino.neck.rotation.x = -duck * 0.35 + motion.pitch * 0.5 + nod.neckPitch;
   dino.head.position.y =
     3.02 -
     duck * 1.18 +
-    (run ? motion.bob * 0.35 : breathing * 0.025) - motion.drop * 0.5;
-  dino.head.rotation.x = duck * 0.14 + Math.sin(time * 0.7) * 0.018 + fire * 0.07 + motion.pitch * 0.3;
+    (run ? motion.bob * 0.35 : breathing * 0.025) - motion.drop * 0.5 + nod.headY;
+  dino.head.rotation.x = duck * 0.14 + Math.sin(time * 0.7) * 0.018 + fire * 0.07 + motion.pitch * 0.3 + nod.headPitch;
   dino.jaw.rotation.x = 0.03 + Math.max(0, Math.sin(time * 0.6)) * 0.035 - fire * 0.45;
   dino.forelimbs.forEach(({ shoulder, elbow, side, motionScale }, i) => {
     const phase = stride + i * Math.PI - 0.55;

@@ -73,7 +73,7 @@ test("mount selection survives rider changes, reload, retry and camp without ove
   expect(errors).toEqual([]);
 });
 
-test("forelimbs articulate continuously during running, jumping and landing for every mount", async ({ page }) => {
+test("upper-body joints articulate continuously during running, jumping and landing for every mount", async ({ page }) => {
   await openGame(page);
   const samples = await page.evaluate(async () => {
     const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
@@ -84,11 +84,18 @@ test("forelimbs articulate continuously during running, jumping and landing for 
       const dino = buildDinosaur(0, mount.id), dt = 1 / fps;
       const ranges = dino.forelimbs.map(() => ({ min: Infinity, max: -Infinity, previous: null }));
       let y = 0, vy = 0, fastest = 0, maxFlex = 0, attached = true;
+      let previousNod, maxNodSpeed = 0, neckRange = [Infinity, -Infinity], headRange = [Infinity, -Infinity], lag = 0;
       for (let frame = 0; frame < fps * 2; frame++) {
         if (frame === Math.round(fps * 0.4)) vy = JUMP_VELOCITY;
         ({ y, vy } = advanceJump(y, vy, dt));
         dino.root.position.y = y;
         animateDinosaur(dino, frame * dt, 1, 0, y, dt, 0, vy);
+        const nod = dino.headMotion;
+        neckRange = [Math.min(neckRange[0], nod.neckY), Math.max(neckRange[1], nod.neckY)];
+        headRange = [Math.min(headRange[0], nod.headY), Math.max(headRange[1], nod.headY)];
+        lag = Math.max(lag, Math.abs(nod.headY - nod.neckY));
+        if (previousNod) maxNodSpeed = Math.max(maxNodSpeed, Math.abs(nod.neckY - previousNod[0]) / dt, Math.abs(nod.headY - previousNod[1]) / dt);
+        previousNod = [nod.neckY, nod.headY];
         dino.forelimbs.forEach(({ shoulder, elbow }, i) => {
           const range = ranges[i], values = [shoulder.rotation.x, shoulder.rotation.z, elbow.rotation.x];
           range.min = Math.min(range.min, values[0]); range.max = Math.max(range.max, values[0]);
@@ -98,7 +105,8 @@ test("forelimbs articulate continuously during running, jumping and landing for 
           attached &&= shoulder.parent === dino.body && elbow.parent === shoulder;
         });
       }
-      result.push({ mount: mount.id, fps, swing: Math.min(...ranges.map((r) => r.max - r.min)), fastest, maxFlex, attached });
+      result.push({ mount: mount.id, fps, swing: Math.min(...ranges.map((r) => r.max - r.min)), fastest, maxFlex, attached,
+        neckRange: neckRange[1] - neckRange[0], headRange: headRange[1] - headRange[0], maxNodSpeed, lag });
     }
     return result;
   });
@@ -108,6 +116,13 @@ test("forelimbs articulate continuously during running, jumping and landing for 
     expect(sample.fastest).toBeLessThan(3);
     expect(sample.maxFlex).toBeGreaterThan(0.04);
     expect(sample.maxFlex).toBeLessThan(0.25);
+    expect(sample.neckRange).toBeGreaterThan(0.02);
+    expect(sample.neckRange).toBeLessThan(0.07);
+    expect(sample.headRange).toBeGreaterThan(0.01);
+    expect(sample.headRange).toBeLessThan(sample.neckRange);
+    expect(sample.lag).toBeGreaterThan(0.004);
+    expect(sample.lag).toBeLessThan(0.04);
+    expect(sample.maxNodSpeed).toBeLessThan(0.8);
   }
 });
 

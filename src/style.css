@@ -1066,14 +1066,17 @@ select {
   70% { transform: scale(1.025); text-shadow: 0 0 9px #f6bd7855; }
   100% { transform: scale(1); text-shadow: 0 0 0 #f6bd7800; }
 }
+@media (min-width: 701px) {
+  .death-overlay .death-modal { width: 530px; padding: 48px; }
+}
 @media (min-width: 701px) and (max-height: 740px) {
-  .death-overlay .death-modal { padding: 24px; }
+  .death-overlay .death-modal { padding: 34px; }
   .death-modal h2 { font-size: 28px; line-height: 1.2; margin: 10px 0; }
   .death-modal #death-reason { font-size: 11px; line-height: 1.7; margin: 10px 0; }
   .death-modal .death-stats { margin: 18px 0 16px; padding: 14px 0; }
 }
 @media (min-width: 701px) and (max-height: 560px) {
-  .death-overlay .death-modal { padding: 18px; }
+  .death-overlay .death-modal { padding: 24px; }
   .death-modal .death-stats { margin: 16px 0 12px; padding: 12px 0; }
   .death-modal .death-stats strong { font-size: 48px; line-height: 1.1; }
 }

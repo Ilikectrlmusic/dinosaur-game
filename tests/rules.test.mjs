@@ -214,4 +214,6 @@ test("cactus tips and individual arms respect visible clearance instead of a ful
   assert.equal(contact(box(0.5, 1.53, 0)), false, "empty space over the shorter side arm is safe");
   assert.equal(contact(box(0.5, 1.38, 0)), true, "touching the actual side arm is lethal");
   assert.equal(contact(box(0.17, 1.53, 0)), false, "rounded cap does not occupy its outer bounding corner");
+  assert.equal(contact(box(0.59, 0.79, 0, 0.005)), false, "rounded elbow leaves its old square outer corner empty");
+  assert.equal(contact(box(0.46, 0.9, 0, 0.015)), true, "the continuous curved elbow still collides");
 });

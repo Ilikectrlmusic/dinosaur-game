@@ -84,29 +84,33 @@ test("upper-body joints articulate continuously during running, jumping and land
       const dino = buildDinosaur(0, mount.id), dt = 1 / fps;
       const ranges = dino.forelimbs.map(() => ({ min: Infinity, max: -Infinity, previous: null }));
       let y = 0, vy = 0, fastest = 0, maxFlex = 0, attached = true;
-      let previousNod, maxNodSpeed = 0, neckRange = [Infinity, -Infinity], headRange = [Infinity, -Infinity], lag = 0;
+      let previousNod, maxNodSpeed = 0, neckRange = [Infinity, -Infinity], headRange = [Infinity, -Infinity];
       for (let frame = 0; frame < fps * 2; frame++) {
         if (frame === Math.round(fps * 0.4)) vy = JUMP_VELOCITY;
         ({ y, vy } = advanceJump(y, vy, dt));
         dino.root.position.y = y;
         animateDinosaur(dino, frame * dt, 1, 0, y, dt, 0, vy);
-        const nod = dino.headMotion;
-        neckRange = [Math.min(neckRange[0], nod.neckY), Math.max(neckRange[1], nod.neckY)];
-        headRange = [Math.min(headRange[0], nod.headY), Math.max(headRange[1], nod.headY)];
-        lag = Math.max(lag, Math.abs(nod.headY - nod.neckY));
-        if (previousNod) maxNodSpeed = Math.max(maxNodSpeed, Math.abs(nod.neckY - previousNod[0]) / dt, Math.abs(nod.headY - previousNod[1]) / dt);
-        previousNod = [nod.neckY, nod.headY];
+        // Measure the actual skull/neck transforms, excluding the whole
+        // animal's flight, rather than testing an unused animation offset.
+        const neckY = dino.neck.position.y;
+        const headY = (dino.head.matrixWorld.elements[13] - y) / dino.sizeScale;
+        if (frame < fps * 0.4) {
+          neckRange = [Math.min(neckRange[0], neckY), Math.max(neckRange[1], neckY)];
+          headRange = [Math.min(headRange[0], headY), Math.max(headRange[1], headY)];
+        }
+        if (previousNod) maxNodSpeed = Math.max(maxNodSpeed, Math.abs(neckY - previousNod[0]) / dt, Math.abs(headY - previousNod[1]) / dt);
+        previousNod = [neckY, headY];
         dino.forelimbs.forEach(({ shoulder, elbow }, i) => {
           const range = ranges[i], values = [shoulder.rotation.x, shoulder.rotation.z, elbow.rotation.x];
           range.min = Math.min(range.min, values[0]); range.max = Math.max(range.max, values[0]);
           if (range.previous) values.forEach((value, j) => { fastest = Math.max(fastest, Math.abs(value - range.previous[j]) / dt); });
           range.previous = values;
           maxFlex = Math.max(maxFlex, Math.abs(elbow.rotation.x));
-          attached &&= shoulder.parent === dino.body && elbow.parent === shoulder;
+          attached &&= shoulder.parent === dino.body && elbow.parent === shoulder && dino.head.parent === dino.neck;
         });
       }
       result.push({ mount: mount.id, fps, swing: Math.min(...ranges.map((r) => r.max - r.min)), fastest, maxFlex, attached,
-        neckRange: neckRange[1] - neckRange[0], headRange: headRange[1] - headRange[0], maxNodSpeed, lag });
+        neckRange: neckRange[1] - neckRange[0], headRange: headRange[1] - headRange[0], maxNodSpeed });
     }
     return result;
   });
@@ -117,12 +121,10 @@ test("upper-body joints articulate continuously during running, jumping and land
     expect(sample.maxFlex).toBeGreaterThan(0.04);
     expect(sample.maxFlex).toBeLessThan(0.25);
     expect(sample.neckRange).toBeGreaterThan(0.02);
-    expect(sample.neckRange).toBeLessThan(0.07);
-    expect(sample.headRange).toBeGreaterThan(0.01);
-    expect(sample.headRange).toBeLessThan(sample.neckRange);
-    expect(sample.lag).toBeGreaterThan(0.004);
-    expect(sample.lag).toBeLessThan(0.04);
-    expect(sample.maxNodSpeed).toBeLessThan(0.8);
+    expect(sample.neckRange).toBeLessThan(0.14);
+    expect(sample.headRange).toBeGreaterThan(sample.neckRange * 0.8);
+    expect(sample.headRange).toBeLessThan(sample.neckRange * 1.5);
+    expect(sample.maxNodSpeed).toBeLessThan(4);
   }
 });
 

@@ -5,6 +5,8 @@ import { reptileSurface, fabricSurface, leatherSurface } from "./surface-detail.
 import { FlexibleRein } from "./flexible-rein.js";
 import { mountDefinition } from "./mounts.js";
 import { DinosaurGait, solveLeg } from "./dinosaur-gait.js";
+import { cactusArmPoint } from "./cactus-shape.js";
+import { cactusArmGeometry, wingMembraneGeometry, wingPoint } from "./obstacle-detail.js";
 
 const saddleAnchor = new THREE.Vector3(0, 2.61, 0.15);
 
@@ -496,8 +498,8 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
   anatomicalPart(neck, [[-0.54, 0.35, 0.23, 0.3], [-0.32, 0.25, 0.31, 0.45], [0, 0, 0.37, 0.56], [0.32, -0.3, 0.34, 0.47], [0.5, -0.43, 0.14, 0.17]], skin);
   ellipsoid(neck, belly, [0, -0.14, -0.28], [0.29, 0.48, 0.17], [-0.3, 0, 0]);
   const head = new THREE.Group();
-  head.position.set(0, 3.02, -1.48);
-  root.add(head);
+  head.position.set(0, 0.53, -0.54);
+  neck.add(head);
   anatomicalPart(head, [[-1.19, -0.04, 0.07, 0.07], [-1.03, -0.01, 0.25, 0.18], [-0.72, 0.02, 0.3, 0.22], [-0.33, 0.06, 0.39, 0.31], [0.06, 0.015, 0.31, 0.3], [0.26, -0.09, 0.13, 0.14]], skin);
   // Mouth line and independently modeled lower jaw.
   ellipsoid(head, darkLeather, [0, -0.175, -0.58], [0.316, 0.035, 0.57]);
@@ -726,7 +728,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
   addMountFeatures(definition, body, head, horn);
   body.scale.x = definition.bodyWidth;
   neck.scale.x = definition.neckWidth;
-  head.scale.set(definition.headWidth, definition.headHeight, definition.snoutLength);
+  head.scale.set(definition.headWidth / definition.neckWidth, definition.headHeight, definition.snoutLength);
   mergeStaticMeshes(root);
   legs.forEach((leg) => { leg.soleProfile = footSupportProfile(leg.foot); });
   const cactusContacts = [body, ...legs.flatMap(({ hip, shin, foot }) => [hip, shin, foot])]
@@ -749,7 +751,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     legs,
     forelimbs,
     gait: new DinosaurGait(),
-    headMotion: { neckY: 0, headY: 0, neckPitch: 0, headPitch: 0 },
+    headMotion: { neckY: 0, neckPitch: 0, headPitch: 0 },
     contactPosition: new THREE.Vector3(),
     tail,
     saddle,
@@ -791,24 +793,26 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
   dino.body.rotation.x = duck * 0.16 + motion.pitch;
   dino.body.rotation.z = run ? Math.sin(stride) * 0.012 * motion.strideWeight : 0;
   const nod = dino.headMotion, weight = run ? motion.strideWeight : 0;
-  // The neck absorbs each stride; the smaller head movement follows with a
-  // little delay. Damp the extra offsets so flight and recovery stay smooth.
+  // Carry the skull with the neck joint. A tiny independent flex keeps the
+  // gaze alive without filtering away the head's visible stride movement.
   nod.neckY = THREE.MathUtils.damp(nod.neckY,
     Math.sin(stride * 2 - 0.35) * 0.035 * weight + (run ? 0 : breathing * 0.006), 18, dt);
-  nod.headY = THREE.MathUtils.damp(nod.headY, nod.neckY * 0.68, 14, dt);
   nod.neckPitch = THREE.MathUtils.damp(nod.neckPitch,
     Math.sin(stride * 2 - 0.7) * 0.016 * weight + (run ? 0 : breathing * 0.003), 16, dt);
-  nod.headPitch = THREE.MathUtils.damp(nod.headPitch, -nod.neckPitch * 0.55, 12, dt);
+  nod.headPitch = THREE.MathUtils.damp(nod.headPitch,
+    Math.sin(stride * 2 - 0.9) * 0.004 * weight + (run ? 0 : breathing * 0.002), 14, dt);
   dino.neck.position.y =
     2.49 -
     duck * 1.04 +
     (run ? motion.bob * 0.65 : breathing * 0.02) - motion.drop * 0.65 + nod.neckY;
   dino.neck.rotation.x = -duck * 0.35 + motion.pitch * 0.5 + nod.neckPitch;
-  dino.head.position.y =
-    3.02 -
-    duck * 1.18 +
-    (run ? motion.bob * 0.35 : breathing * 0.025) - motion.drop * 0.5 + nod.headY;
-  dino.head.rotation.x = duck * 0.14 + Math.sin(time * 0.7) * 0.018 + fire * 0.07 + motion.pitch * 0.3 + nod.headPitch;
+  // Preserve the seated duck clearance while the neck's nod and common
+  // translation now propagate directly into the skull's attachment point.
+  const duckAngle = -duck * 0.35, c = Math.cos(duckAngle), s = Math.sin(duckAngle);
+  dino.head.position.set(0, (0.53 - duck * 0.14) * c - 0.54 * s,
+    -(0.53 - duck * 0.14) * s - 0.54 * c);
+  dino.head.rotation.x = duck * 0.49 + Math.sin(time * 0.7) * 0.018 + fire * 0.07
+    - motion.pitch * 0.2 + nod.headPitch;
   dino.jaw.rotation.x = 0.03 + Math.max(0, Math.sin(time * 0.6)) * 0.035 - fire * 0.45;
   dino.forelimbs.forEach(({ shoulder, elbow, side, motionScale }, i) => {
     const phase = stride + i * Math.PI - 0.55;
@@ -882,6 +886,7 @@ export function buildCactus(height = 1.8) {
   const green = new THREE.MeshStandardMaterial({
     color: "#59684a",
     roughness: 0.9,
+    vertexColors: true,
   });
   const lightGreen = new THREE.MeshStandardMaterial({
     color: "#71805a",
@@ -896,23 +901,10 @@ export function buildCactus(height = 1.8) {
   trunk.position.y = (height - 0.16) / 2;
   trunk.castShadow = true;
   group.add(trunk);
-  const tip = height * 0.52;
   for (const s of [-1, 1]) {
-    const armHeight = height * (s === 1 ? 0.38 : 0.3);
-    const shoulder = tip + height * (s === 1 ? 0.03 : -0.05);
-    segment(
-      group,
-      green,
-      [s * 0.12, shoulder, 0],
-      [s * 0.5, shoulder, 0],
-      0.115,
-    );
-    const arm = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.115, armHeight - 0.23, 4, 10),
-      green,
-    );
-    arm.position.set(s * 0.5, shoulder + armHeight / 2, 0);
+    const arm = new THREE.Mesh(cactusArmGeometry(height, s), green);
     arm.castShadow = true;
+    arm.receiveShadow = true;
     group.add(arm);
   }
   for (let i = 0; i < 10; i++) {
@@ -933,6 +925,14 @@ export function buildCactus(height = 1.8) {
         z = Math.sin(angle) * 0.18;
       spikePositions.push(x, y, z, x * 1.19, y + 0.025, z * 1.19);
     }
+  for (const side of [-1, 1]) for (let i = 3; i <= 15; i += 2) {
+    const p = cactusArmPoint(height, side, i / 16);
+    for (let j = 0; j < 6; j++) {
+      const a = j / 6 * Math.PI * 2, nx = -p.ty * Math.cos(a), ny = p.tx * Math.cos(a), nz = Math.sin(a);
+      spikePositions.push(p.x + nx * 0.115, p.y + ny * 0.115, nz * 0.115,
+        p.x + nx * 0.141, p.y + ny * 0.141 + 0.01, nz * 0.141);
+    }
+  }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute(
     "position",
@@ -961,97 +961,82 @@ export function buildCactusCluster(members) {
 }
 
 export function buildPterosaur() {
-  const root = new THREE.Group(),
-    mat = new THREE.MeshStandardMaterial({
-      ...leatherGrain,
-      color: "#6a604e",
-      roughness: 0.92,
-      side: THREE.DoubleSide,
-    });
-  const skinmat = new THREE.MeshStandardMaterial({
-    color: "#6e6954",
-    roughness: 0.95,
+  const root = new THREE.Group();
+  const membrane = new THREE.MeshStandardMaterial({
+    bumpMap: leatherGrain.bumpMap, bumpScale: 0.006,
+    color: "#a17e61", roughness: 0.84, vertexColors: true, side: THREE.DoubleSide,
   });
-  ellipsoid(root, skinmat, [0, 0, 0], [0.2, 0.25, 0.65]);
-  ellipsoid(root, skinmat, [0, 0.16, -0.47], [0.2, 0.22, 0.3]);
-  const beak = new THREE.Mesh(
-    new THREE.ConeGeometry(0.16, 0.8, 8),
-    new THREE.MeshStandardMaterial({ color: "#b49a6a", roughness: 0.85 }),
-  );
-  beak.rotation.x = -Math.PI / 2;
-  beak.position.set(0, 0.1, -1);
-  root.add(beak);
-  const crest = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.6, 5), skinmat);
-  crest.rotation.x = 0.8;
-  crest.position.set(0, 0.36, -0.24);
-  root.add(crest);
-  for (const s of [-1, 1])
-    ellipsoid(root, darkLeather, [s * 0.18, 0.18, -0.55], [0.025, 0.035, 0.04]);
+  const skinmat = new THREE.MeshStandardMaterial({
+    bumpMap: leatherGrain.bumpMap, bumpScale: 0.008,
+    color: "#79715a", roughness: 0.88,
+  });
+  const underside = new THREE.MeshStandardMaterial({ color: "#b0a083", roughness: 0.94 });
+  const beakmat = new THREE.MeshStandardMaterial({ color: "#bea174", roughness: 0.65 });
+  const rim = new THREE.MeshStandardMaterial({ color: "#68513e", roughness: 0.88 });
+  const eye = new THREE.MeshStandardMaterial({ color: "#b99945", roughness: 0.3 });
+  const pupil = new THREE.MeshStandardMaterial({ color: "#131a15", roughness: 0.16 });
+  anatomicalPart(root, [[-0.62, 0.05, 0.07, 0.1], [-0.37, 0, 0.19, 0.24],
+    [0.04, 0, 0.21, 0.25], [0.43, -0.01, 0.13, 0.16], [0.68, -0.02, 0.035, 0.04]], skinmat);
+  ellipsoid(root, underside, [0, -0.105, -0.12], [0.17, 0.145, 0.4]);
+  anatomicalPart(root, [[-0.73, 0.16, 0.12, 0.13], [-0.56, 0.1, 0.13, 0.18],
+    [-0.35, 0.03, 0.16, 0.2], [-0.2, 0, 0.14, 0.15]], skinmat);
+  ellipsoid(root, skinmat, [0, 0.19, -0.65], [0.165, 0.18, 0.27], [-0.08, 0, 0]);
+  anatomicalPart(root, [[-1.4, 0.11, 0.004, 0.006], [-1.23, 0.145, 0.035, 0.045],
+    [-0.98, 0.18, 0.09, 0.085], [-0.77, 0.19, 0.13, 0.1], [-0.62, 0.17, 0.11, 0.075]], beakmat);
+  anatomicalPart(root, [[-1.39, 0.105, 0.003, 0.004], [-1.15, 0.083, 0.04, 0.025],
+    [-0.89, 0.08, 0.09, 0.045], [-0.65, 0.095, 0.12, 0.07]], underside);
+  // A swept bony crest, rather than a cone sticking out of the skull.
+  anatomicalPart(root, [[-0.79, 0.29, 0.012, 0.015], [-0.59, 0.41, 0.045, 0.14],
+    [-0.3, 0.51, 0.038, 0.14], [-0.03, 0.55, 0.005, 0.008]], skinmat);
+  root.add(curveMesh([[0, 0.31, -0.79], [0, 0.55, -0.54], [0, 0.64, -0.29], [0, 0.55, -0.03]], 0.009, beakmat, 20));
+  for (const s of [-1, 1]) {
+    ellipsoid(root, rim, [s * 0.147, 0.225, -0.65], [0.035, 0.065, 0.075]);
+    ellipsoid(root, eye, [s * 0.171, 0.233, -0.667], [0.017, 0.039, 0.043]);
+    ellipsoid(root, pupil, [s * 0.185, 0.237, -0.678], [0.009, 0.024, 0.024]);
+    ellipsoid(root, beakmat, [s * 0.155, 0.284, -0.667], [0.03, 0.014, 0.065], [0, s * -0.15, 0]);
+    ellipsoid(root, rim, [s * 0.082, 0.211, -0.99], [0.006, 0.009, 0.018]);
+    root.add(curveMesh([[s * 0.123, 0.122, -0.73], [s * 0.09, 0.114, -0.92],
+      [s * 0.037, 0.108, -1.18], [s * 0.003, 0.106, -1.39]], 0.004, rim, 16));
+    // Tucked hind limbs and three small claws read clearly from below.
+    ellipsoid(root, skinmat, [s * 0.15, -0.09, 0.34], [0.09, 0.11, 0.2], [-0.3, 0, 0]);
+    segment(root, skinmat, [s * 0.16, -0.13, 0.39], [s * 0.19, -0.18, 0.67], 0.045, 0.025);
+    for (let j = -1; j <= 1; j++) {
+      root.add(curveMesh([[s * 0.19, -0.18, 0.65], [s * 0.19 + j * 0.03, -0.2, 0.76],
+        [s * 0.19 + j * 0.04, -0.18, 0.83]], 0.009, beakmat, 8));
+    }
+  }
   const wings = [];
   for (const s of [-1, 1]) {
     const pivot = new THREE.Group();
     root.add(pivot);
-    const geometry = new THREE.BufferGeometry();
-    const vertices = [
-      0.1,
-      0,
-      -0.28,
-      s * 0.85,
-      0.1,
-      -0.6,
-      s * 2.05,
-      0,
-      -0.9,
-      s * 1.5,
-      -0.03,
-      0.1,
-      s * 0.7,
-      -0.05,
-      0.5,
-      0.1,
-      0,
-      0.35,
-    ];
-    const positions = [];
-    for (let i = 1; i < 5; i++)
-      positions.push(
-        ...vertices.slice(0, 3),
-        ...vertices.slice(i * 3, i * 3 + 3),
-        ...vertices.slice((i + 1) * 3, (i + 1) * 3 + 3),
-      );
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions, 3),
-    );
-    const wingUVs = [];
-    for (let i = 0; i < positions.length; i += 3)
-      wingUVs.push(Math.abs(positions[i]) / 2.05, (positions[i + 2] + 0.9) / 1.4);
-    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(wingUVs, 2));
-    geometry.computeVertexNormals();
-    const wing = new THREE.Mesh(geometry, mat);
-    wing.castShadow = true;
+    const wing = new THREE.Mesh(wingMembraneGeometry(s), membrane);
+    wing.castShadow = wing.receiveShadow = true;
     pivot.add(wing);
-    segment(pivot, skinmat, [0, 0, -0.28], [s * 0.85, 0.1, -0.6], 0.055, 0.035);
-    segment(
-      pivot,
-      skinmat,
-      [s * 0.85, 0.1, -0.6],
-      [s * 2.05, 0, -0.9],
-      0.035,
-      0.008,
-    );
-    for (let i = 0; i < 3; i++)
-      segment(
-        pivot,
-        skinmat,
-        [s * 0.85, 0.1, -0.6],
-        [s * (0.5 + i * 0.45), -0.03, 0.4 - i * 0.1],
-        0.012,
-        0.004,
-      );
+    ellipsoid(pivot, skinmat, [s * 0.23, 0.01, -0.25], [0.21, 0.085, 0.15], [0, s * 0.35, 0]);
+    pivot.add(curveMesh([[s * 0.09, 0.02, -0.28], [s * 0.44, 0.07, -0.43],
+      [s * 0.85, 0.11, -0.6]], 0.035, skinmat, 16));
+    const spar = Array.from({ length: 21 }, (_, i) => wingPoint(s, 0.4 + i / 20 * 0.6, 0).toArray());
+    pivot.add(curveMesh(spar, 0.017, skinmat, 24));
+    ellipsoid(pivot, beakmat, [s * 0.85, 0.105, -0.6], [0.055, 0.035, 0.06]);
+    for (let j = 0; j < 3; j++) {
+      pivot.add(curveMesh([[s * (0.82 + j * 0.03), 0.1, -0.61],
+        [s * (0.81 + j * 0.035), 0.12, -0.7 - j * 0.02],
+        [s * (0.86 + j * 0.04), 0.1, -0.72 - j * 0.02]], 0.009, beakmat, 8));
+    }
+    for (const end of [0.15, 0.32, 0.51, 0.69, 0.85]) {
+      const points = Array.from({ length: 13 }, (_, i) => {
+        const t = i / 12;
+        return wingPoint(s, 0.4 + (end - 0.4) * t, t).toArray();
+      });
+      const vein = curveMesh(points, 0.0035, rim, 14);
+      vein.castShadow = false;
+      pivot.add(vein);
+    }
+    pivot.add(curveMesh(Array.from({ length: 25 }, (_, i) => wingPoint(s, i / 24, 1).toArray()), 0.006, rim, 28));
     wings.push(pivot);
   }
-  segment(root, skinmat, [0, 0, 0.4], [0, -0.05, 1.05], 0.09, 0.01);
+  anatomicalPart(root, [[0.48, -0.02, 0.09, 0.09], [0.72, -0.03, 0.048, 0.05],
+    [1.03, -0.055, 0.005, 0.008]], skinmat);
   root.userData.wings = wings;
   return mergeStaticMeshes(root);
 }

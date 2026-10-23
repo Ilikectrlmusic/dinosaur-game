@@ -1,3 +1,5 @@
+import { cactusArmContacts, CACTUS_ARM_RADIUS } from "./cactus-shape.js";
+
 // Metres, seconds and a constant downward acceleration keep jumps independent of FPS.
 export const GRAVITY = 22;
 export const JUMP_VELOCITY = 10.5;
@@ -112,10 +114,8 @@ function overlapsCactus(runner, x, z, height) {
   });
   if (touches(x, 0.02, z, x, height - 0.18, z, 0.18)) return true;
   for (const side of [-1, 1]) {
-    const shoulder = height * (side === 1 ? 0.55 : 0.47);
-    const armHeight = height * (side === 1 ? 0.38 : 0.3);
-    if (touches(x + side * 0.12, shoulder, z, x + side * 0.5, shoulder, z, 0.115) ||
-      touches(x + side * 0.5, shoulder + 0.115, z, x + side * 0.5, shoulder + armHeight - 0.115, z, 0.115)) return true;
+    for (const point of cactusArmContacts(height, side))
+      if (touches(x + point.x, point.y, z, x + point.x, point.y, z, CACTUS_ARM_RADIUS)) return true;
   }
   return false;
 }

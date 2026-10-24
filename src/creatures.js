@@ -208,7 +208,7 @@ export function buildRider(index = 0) {
   const pelvis = new THREE.Group();
   pelvis.position.set(0, 2.94, 0.12);
   root.add(pelvis);
-  ellipsoid(pelvis, cloth, [0, 0, 0], [0.3, 0.22, 0.23]);
+  ellipsoid(pelvis, cloth, [0, 0, 0], [0.32, 0.23, 0.25]);
   const torso = new THREE.Group();
   torso.position.set(0, 3.39, 0.02);
   root.add(torso);
@@ -363,9 +363,16 @@ export function buildRider(index = 0) {
     for (let finger = 0; finger < 4; finger++) segment(arm, face, [s * 0.05 + (finger - 1.5) * 0.025, -0.49, -0.48], [s * 0.05 + (finger - 1.5) * 0.025, -0.535, -0.51], 0.012);
     arm.add(curveMesh([[s * 0.07, -0.14, -0.13], [s * 0.14, -0.3, -0.16], [s * 0.075, -0.43, -0.39]], 0.004, stitch, 8));
     const leg = new THREE.Group();
-    leg.position.set(s * 0.28, 2.94, 0.12);
+    leg.position.set(s * 0.22, 2.92, 0.12);
     root.add(leg);
-    segment(leg, cloth, [0, 0, 0], [0, -RIDER_THIGH_LENGTH, 0], 0.145, 0.11);
+    // The rounded upper sections overlap the trousers around the hip. A
+    // flat-ended cylinder left an exposed socket when the leg opened outward.
+    const upperLeg = anatomicalPart(leg, [
+      [-RIDER_THIGH_LENGTH, 0, 0.105, 0.105], [-0.43, 0, 0.12, 0.12],
+      [-0.22, 0, 0.15, 0.14], [-0.025, 0, 0.17, 0.155],
+      [0.08, 0, 0.13, 0.12], [0.13, 0, 0.025, 0.03],
+    ], cloth);
+    upperLeg.geometry.rotateX(-Math.PI / 2);
     const knee = new THREE.Group();
     knee.position.y = -RIDER_THIGH_LENGTH; leg.add(knee);
     ellipsoid(knee, cloth, [0, 0, 0], [0.12, 0.12, 0.12]);
@@ -379,8 +386,7 @@ export function buildRider(index = 0) {
     ring(boot, steel, 0.12, 0.012, [0, -0.11, -0.02], [0, 0, 0]).scale.y = 1.1;
     segment(boot, steel, [-0.12, -0.24, -0.02], [0.12, -0.24, -0.02], 0.013);
     for (let j = 0; j < 4; j++) segment(boot, stitch, [-0.035, 0.07 - j * 0.04, -0.16], [0.035, 0.055 - j * 0.04, -0.16], 0.005);
-    // Standalone portraits retain a relaxed pose; the riding solver refits
-    // these real joints to the selected animal's skin once mounted.
+    // Standalone portraits retain the same relaxed bend as the riding pose.
     leg.rotation.z = s * 0.6; leg.rotation.x = 0.25; knee.rotation.x = -0.5;
     limbs.push({ arm, hand, leg, knee, boot, side: s });
   }

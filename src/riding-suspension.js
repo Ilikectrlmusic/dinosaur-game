@@ -77,28 +77,43 @@ class HangingChain {
   }
 }
 
-// Gravity, damped inertia, fixed bone/strap lengths and unilateral skin
-// contacts determine the pose. There are no species-specific leg/bag offsets.
+// The rider keeps a fitted, stable riding pose. Only the panniers and leather
+// straps use gravity and inertia; skin contacts keep the luggage outside.
 export class RidingSuspension {
   constructor(dino, surface, panniers, straps) {
     this.dino = dino; this.surface = surface; this.panniers = panniers; this.straps = straps;
     this.accumulator = 0; this.previousVelocity = 0; this.previousSpeed = 14;
-    this.point = new THREE.Vector3(); this.hip = new THREE.Vector3(); this.direction = new THREE.Vector3();
+    this.point = new THREE.Vector3(); this.direction = new THREE.Vector3();
     this.knee = new THREE.Vector3(); this.pole = new THREE.Vector3(); this.rotation = new THREE.Quaternion();
     this.inverse = new THREE.Quaternion(); this.bootRotation = new THREE.Quaternion();
-    this.bootHalf = new THREE.Vector3(0.125, 0.155, 0.20).multiplyScalar(1 / dino.sizeScale);
     this.euler = new THREE.Euler(); this.rider = null; this.chains = [];
   }
   resetRider() {
     const dino = this.dino, scale = dino.sizeScale;
     this.rider = dino.rider;
+    // Measure the mount once. Keep a small bend in both knees instead of
+    // allowing each moving thigh to push the rider into a different pose.
+    let bodyWidth = 0, thighWidth = 0;
+    for (const profile of this.surface.profiles) {
+      let half = 0;
+      for (let i = 0; i < profile.right.length; i++) {
+        if (Number.isFinite(profile.right[i])) half = Math.max(half, Math.abs(profile.right[i]), Math.abs(profile.left[i]));
+      }
+      if (profile.group === dino.body) bodyWidth = half * dino.body.scale.x * scale;
+      if (profile.sweep) thighWidth = Math.max(thighWidth, (Math.abs(profile.group.position.x) + half) * scale);
+    }
+    const footWidth = Math.max(bodyWidth + 0.28, thighWidth + 0.10);
     this.legs = this.rider.limbs.map(({ leg, side }, i) => {
       const hip = leg.position.clone().multiplyScalar(1 / scale).add(this.rider.root.position);
-      const knee = hip.clone().add(new THREE.Vector3(side * 0.43, -0.31, -0.18).multiplyScalar(1 / scale));
-      const ankle = knee.clone().add(new THREE.Vector3(side * 0.12, -0.46, 0.16).multiplyScalar(1 / scale));
+      const reach = RIDER_THIGH_LENGTH + RIDER_SHIN_LENGTH - 0.07;
+      const drop = Math.sqrt(Math.max(0.20, reach * reach - (footWidth - Math.abs(leg.position.x)) ** 2 - 0.05 ** 2));
+      const foot = new THREE.Vector3(side * footWidth, leg.position.y - drop, leg.position.z - 0.05);
+      const pole = new THREE.Vector3(side * 0.35, -0.2, -0.45).multiplyScalar(1 / scale);
+      const knee = hip.clone().add(pole);
+      const ankle = foot.clone().multiplyScalar(1 / scale).add(this.rider.root.position);
       const start = this.start(side, 0.03), end = ankle.clone();
       const chain = new HangingChain(start, end, 0.97 / scale, side, this.straps[i], null, true);
-      return { side, nodes: [particle(hip, 0), particle(knee), particle(ankle)], chain };
+      return { side, foot, pole, nodes: [particle(hip, 0), particle(knee, 0), particle(ankle, 0)], chain };
     });
     if (!this.chains.length) this.chains = this.panniers.map(({ side, strap }) => {
       const start = this.start(side, 0.65);
@@ -111,40 +126,7 @@ export class RidingSuspension {
   }
   start(side, z) { return new THREE.Vector3(side * 0.44, this.dino.saddle.position.y + 0.025, z); }
 
-  legContacts(leg) {
-    const [hip, knee, ankle] = leg.nodes, side = leg.side, scale = this.dino.sizeScale;
-    this.surface.projectSphere(knee.position, 0.12 / scale, side);
-    this.surface.projectSphere(ankle.position, 0.14 / scale, side);
-    this.point.copy(ankle.position); this.point.y += 0.05 / scale;
-    const bootPush = this.surface.projectBox(this.point, this.bootHalf, side);
-    ankle.position.x += side * bootPush;
-    for (const t of [0.3, 0.6, 0.85]) {
-      this.point.lerpVectors(hip.position, knee.position, t);
-      const push = this.surface.projectSphere(this.point, (0.145 - t * 0.035) / scale, side);
-      knee.position.x += side * push / t;
-    }
-    for (const t of [0.25, 0.5, 0.75]) {
-      this.point.lerpVectors(knee.position, ankle.position, t);
-      const push = this.surface.projectSphere(this.point, 0.105 / scale, side);
-      const weight = (1 - t) ** 2 + t * t;
-      knee.position.x += side * push * (1 - t) / weight;
-      ankle.position.x += side * push * t / weight;
-    }
-  }
   constrain() {
-    const scale = this.dino.sizeScale;
-    for (const leg of this.legs) {
-      const [hip, knee, ankle] = leg.nodes;
-      // A relaxed forward knee and a softly limited heel avoid an inverted
-      // joint while gravity still controls the hanging lower leg.
-      knee.position.z = Math.min(knee.position.z, hip.position.z - 0.06 / scale);
-      knee.position.y = Math.min(knee.position.y, hip.position.y - 0.14 / scale);
-      ankle.position.y = Math.min(ankle.position.y, knee.position.y - 0.22 / scale);
-      ankle.position.z = clamp(ankle.position.z, hip.position.z - 0.12 / scale, hip.position.z + 0.22 / scale);
-      distance(hip, knee, RIDER_THIGH_LENGTH / scale);
-      distance(knee, ankle, RIDER_SHIN_LENGTH / scale);
-      this.legContacts(leg);
-    }
     for (const chain of this.chains) chain.constrain(this.surface);
   }
   update(dt, verticalVelocity = 0, speed = 14) {
@@ -155,19 +137,20 @@ export class RidingSuspension {
     this.previousVelocity = verticalVelocity; this.previousSpeed = speed;
     for (const [i, leg] of this.legs.entries()) {
       leg.nodes[0].position.copy(this.rider.limbs[i].leg.position).multiplyScalar(1 / scale).add(this.rider.root.position);
+      leg.nodes[1].position.copy(leg.nodes[0].position).add(leg.pole);
+      leg.nodes[2].position.copy(leg.foot).multiplyScalar(1 / scale).add(this.rider.root.position);
     }
     this.chains.forEach((chain) => chain.nodes[0].position.copy(this.start(chain.side, 0.65)));
     this.accumulator += step;
     while (this.accumulator >= STEP - 1e-8) {
       this.accumulator -= STEP;
       for (const leg of this.legs) {
-        leg.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
         leg.chain.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
       }
       for (const chain of this.chains) chain.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
       for (let i = 0; i < 12; i++) this.constrain();
     }
-    // Frozen or newly selected poses still need a fitted surface contact.
+    // Newly selected luggage still needs a fitted surface contact.
     if (!step) for (let i = 0; i < 30; i++) this.constrain();
     this.legs.forEach((leg, i) => this.applyLeg(leg, this.rider.limbs[i]));
     this.chains.forEach((chain, i) => {

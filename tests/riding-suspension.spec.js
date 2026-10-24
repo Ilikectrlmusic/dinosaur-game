@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("riders and loaded panniers hang outside each mount's animated skin with fixed bones and attached straps", async ({ page }) => {
+test("rider legs keep a fitted seated pose while panniers hang outside the skin and straps stay attached", async ({ page }) => {
   test.setTimeout(120000);
   await page.route("**/?rig-test", (route) => route.fulfill({ contentType: "text/html", body: "<html><body></body></html>" }));
   await page.goto("/?rig-test");
@@ -15,13 +15,16 @@ test("riders and loaded panniers hang outside each mount's animated skin with fi
       const dino = buildDinosaur(index, mount.id), dt = 1 / fps;
       const skin = dino.skinSurface.profiles.flatMap(({ group }) => group.children.filter((o) => o.isMesh));
       let y = 0, vy = 0, boneError = 0, strapError = 0, penetration = 0, worst = null, maxSpeed = 0;
-      let prior = null, samples = 0, fastest = null;
+      let prior = null, samples = 0, fastest = null, poseDrift = 0, seatedPose;
       for (let frame = 0; frame < fps * 4; frame++) {
         const time = frame * dt;
         if (frame === Math.round(fps * 0.7)) vy = JUMP_VELOCITY;
         ({ y, vy } = advanceJump(y, vy, dt)); dino.root.position.y = y;
         const duck = time > 2.4 && time < 3.4 ? Math.sin((time - 2.4) * Math.PI) ** 2 : 0;
         animateDinosaur(dino, time, 1, duck, y, dt, 0, vy, 14 + time * 0.2);
+        const joints = dino.rider.limbs.flatMap(({ leg, knee, boot }) => [leg, knee, boot]);
+        if (!seatedPose) seatedPose = joints.map((joint) => joint.quaternion.clone());
+        joints.forEach((joint, i) => { poseDrift = Math.max(poseDrift, 1 - Math.abs(joint.quaternion.dot(seatedPose[i]))); });
         const current = [];
         for (const [i, limb] of dino.rider.limbs.entries()) {
           limb.leg.getWorldPosition(a); limb.knee.getWorldPosition(b);
@@ -62,12 +65,13 @@ test("riders and loaded panniers hang outside each mount's animated skin with fi
           });
         }
       }
-      results.push({ mount: mount.id, fps, boneError, strapError, penetration, worst, maxSpeed, fastest, samples });
+      results.push({ mount: mount.id, fps, boneError, strapError, penetration, worst, maxSpeed, fastest, samples, poseDrift });
     }
     return results;
   });
   for (const result of results) {
     expect(result.boneError, JSON.stringify(result)).toBeLessThan(1e-8);
+    expect(result.poseDrift, JSON.stringify(result)).toBeLessThan(1e-10);
     expect(result.strapError, JSON.stringify(result)).toBeLessThan(1e-8);
     expect(result.penetration, JSON.stringify(result.worst)).toBeLessThan(0.005);
     expect(result.maxSpeed, JSON.stringify(result)).toBeLessThan(8);

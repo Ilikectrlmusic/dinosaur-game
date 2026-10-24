@@ -84,19 +84,29 @@ export class CrashPhysics {
       this.connectAtMidpoint(thigh, sh, 0.75);
       this.connectAtMidpoint(sh, f, 0.5);
     });
+    const bags = dino.panniers.map(({ group }) => this.part(group, 1.8, [0.14, 0.19, 0.19]));
     this.saddle = this.part(dino.saddle, 3, [0.45, 0.12, 0.5]);
     this.connectAtMidpoint(body, this.saddle, 0.08);
+    for (const bag of bags) {
+      const tether = new CANNON.DistanceConstraint(this.saddle, bag, this.saddle.position.distanceTo(bag.position), 8e3);
+      tether.collideConnected = false;
+      this.world.addConstraint(tether);
+    }
     const rider = dino.rider;
     const hips = this.part(rider.pelvis, 6, [0.23, 0.15, 0.19]);
     const torso = this.part(rider.torso, 10, [0.25, 0.35, 0.19]);
     const riderHead = this.part(rider.head, 3, [0.18, 0.24, 0.18]);
     this.connectAtMidpoint(hips, torso, 0.35);
     this.connectAtMidpoint(torso, riderHead, 0.55);
-    rider.limbs.forEach(({ arm, leg }) => {
+    rider.limbs.forEach(({ arm, leg, knee }) => {
       const armBody = this.part(arm, 2, [0.09, 0.25, 0.1], [0, -0.2, -0.16]);
       this.connectAtMidpoint(torso, armBody, 1.1);
-      const legBody = this.part(leg, 4, [0.12, 0.43, 0.14], [0, -0.43, -0.05]);
-      this.connectAtMidpoint(hips, legBody, 0.95);
+      const hipAnchor = leg.getWorldPosition(new THREE.Vector3()), kneeAnchor = knee.getWorldPosition(new THREE.Vector3());
+      // Detach the calf first to retain the fitted joint pose at impact.
+      const calfBody = this.part(knee, 2, [0.11, 0.30, 0.16], [0, -0.28, -0.025]);
+      const legBody = this.part(leg, 2, [0.13, 0.28, 0.13], [0, -0.28, 0]);
+      this.connectAtPoint(hips, legBody, hipAnchor, 0.95);
+      this.connectAtPoint(legBody, calfBody, kneeAnchor, 0.85);
     });
     // The rider is thrown by inertia while the mount's chest decelerates.
     hips.velocity.set(velocity.x * 1.4, 3.4, -speed * 0.94);
@@ -105,6 +115,7 @@ export class CrashPhysics {
     body.angularVelocity.set(-2.6, velocity.x * 0.5, velocity.x * 0.4);
     head.angularVelocity.set(-1.2, 0, 0.4);
     dino.reins.forEach((r) => (r.visible = false));
+    [...dino.stirrupStraps, ...dino.panniers.map(({ strap }) => strap)].forEach((strap) => { strap.visible = false; });
     this.centerBody = body;
     this.riderBody = torso;
     const obstacleBody = new CANNON.Body({
@@ -183,8 +194,10 @@ export class CrashPhysics {
     this.world.addConstraint(joint);
   }
   connectAtMidpoint(a, b, angle) {
-    const point = a.position.vadd(b.position).scale(0.5),
-      pivotA = a.pointToLocalFrame(point),
+    this.connectAtPoint(a, b, a.position.vadd(b.position).scale(0.5), angle);
+  }
+  connectAtPoint(a, b, anchor, angle) {
+    const point = new CANNON.Vec3(anchor.x, anchor.y, anchor.z), pivotA = a.pointToLocalFrame(point),
       pivotB = b.pointToLocalFrame(point);
     const joint = new CANNON.ConeTwistConstraint(a, b, {
       pivotA,

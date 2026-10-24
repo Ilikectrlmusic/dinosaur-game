@@ -120,9 +120,10 @@ test("mobile layout and touch controls remain usable", async ({ page }) => {
   await expect(page.locator("#touch-jump")).toBeVisible();
   await expect(page.locator("#mobile-controls button")).toHaveCount(2);
   await expect(page.locator("#touch-left, #touch-right")).toHaveCount(0);
-  await page.locator("#touch-jump").dispatchEvent("pointerdown", {pointerId:1, button:0});
+  // Exercise the visible immediate-action control with a completed gesture.
+  // The surrounding large hit region deliberately waits for a tap release.
+  await page.locator("#touch-jump .touch-icon").click();
   await page.waitForFunction(() => window.__saurian.state.y > 0);
-  await page.locator("#touch-jump").dispatchEvent("pointerup", {pointerId:1, button:0});
   expect(await page.evaluate(() => window.__saurian.state.x)).toBe(0);
 });
 

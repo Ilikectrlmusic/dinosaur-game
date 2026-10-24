@@ -144,7 +144,9 @@ test("mounts have subtly decreasing body sizes while every rider keeps the same 
       for (const part of dino.body.children)
         if (part.isMesh) torso.union(new Box3().setFromObject(part, true));
       const body = torso.getSize(new Vector3());
-      const rider = new Box3().setFromObject(dino.rider.root, true).getSize(new Vector3());
+      // The leg spread now adapts to each animal. Compare the unscaled
+      // human torso and actual bone lengths, rather than the posed silhouette.
+      const rider = new Box3().setFromObject(dino.rider.torso, true).getSize(new Vector3());
       const seatOffset = dino.rider.pelvis.getWorldPosition(new Vector3()).sub(dino.saddle.getWorldPosition(new Vector3()));
       return { id: mount.id, body: body.toArray(), volume: body.x * body.y * body.z, rider: rider.toArray(), seatOffset: seatOffset.toArray() };
     });

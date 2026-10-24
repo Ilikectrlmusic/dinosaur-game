@@ -32,7 +32,7 @@ export default defineConfig({
     },
     {
       name: "mobile-webkit",
-      testMatch: ["**/mobile.spec.js", "**/progression.spec.js", "**/presentation.spec.js", "**/compatibility.spec.js", "**/mounts.spec.js", "**/performance.spec.js", "**/ground-effects.spec.js"],
+      testMatch: ["**/mobile.spec.js", "**/progression.spec.js", "**/presentation.spec.js", "**/compatibility.spec.js", "**/mounts.spec.js", "**/performance.spec.js", "**/ground-effects.spec.js", "**/riding-suspension.spec.js"],
       use: {
         browserName: "webkit",
         launchOptions: { executablePath: process.env.WEBKIT_PATH },

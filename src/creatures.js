@@ -7,6 +7,8 @@ import { mountDefinition } from "./mounts.js";
 import { DinosaurGait, solveLeg } from "./dinosaur-gait.js";
 import { cactusArmPoint } from "./cactus-shape.js";
 import { cactusArmGeometry, wingMembraneGeometry, wingPoint } from "./obstacle-detail.js";
+import { SkinSurface } from "./skin-surface.js";
+import { RidingSuspension, SuspensionStrap, RIDER_THIGH_LENGTH, RIDER_SHIN_LENGTH } from "./riding-suspension.js";
 
 const saddleAnchor = new THREE.Vector3(0, 2.61, 0.15);
 
@@ -363,34 +365,24 @@ export function buildRider(index = 0) {
     const leg = new THREE.Group();
     leg.position.set(s * 0.28, 2.94, 0.12);
     root.add(leg);
-    segment(leg, cloth, [0, 0, 0], [s * 0.28, -0.45, -0.21], 0.145, 0.11);
-    ellipsoid(leg, cloth, [s * 0.28, -0.45, -0.21], [0.12, 0.13, 0.12]);
-    segment(
-      leg,
-      cloth,
-      [s * 0.28, -0.45, -0.21],
-      [s * 0.34, -0.91, 0.02],
-      0.1,
-      0.08,
-    );
-    ellipsoid(
-      leg,
-      darkLeather,
-      [s * 0.34, -0.89, -0.055],
-      [0.105, 0.19, 0.16],
-      [0.12, 0, 0],
-    );
-    ring(
-      leg,
-      steel,
-      0.1,
-      0.012,
-      [s * 0.34, -1.01, -0.04],
-      [0, Math.PI / 2, 0],
-    ).scale.y = 1.3;
-    roundedPart(leg, leather, [0.14, 0.15, 0.035], [s * 0.28, -0.43, -0.318], 0.025);
-    for (let j = 0; j < 4; j++) segment(leg, stitch, [s * 0.34 - 0.035, -0.78 - j * 0.04, -0.19], [s * 0.34 + 0.035, -0.795 - j * 0.04, -0.19], 0.005);
-    limbs.push({ arm, hand, leg, side: s });
+    segment(leg, cloth, [0, 0, 0], [0, -RIDER_THIGH_LENGTH, 0], 0.145, 0.11);
+    const knee = new THREE.Group();
+    knee.position.y = -RIDER_THIGH_LENGTH; leg.add(knee);
+    ellipsoid(knee, cloth, [0, 0, 0], [0.12, 0.12, 0.12]);
+    segment(knee, cloth, [0, 0, 0], [0, -RIDER_SHIN_LENGTH, 0], 0.1, 0.08);
+    roundedPart(knee, leather, [0.14, 0.15, 0.035], [0, 0.015, -0.105], 0.025);
+    const boot = new THREE.Group();
+    boot.position.y = -RIDER_SHIN_LENGTH; knee.add(boot);
+    ellipsoid(boot, darkLeather, [0, -0.045, -0.035], [0.105, 0.18, 0.15]);
+    ellipsoid(boot, leather, [0, -0.15, -0.09], [0.11, 0.07, 0.18]);
+    roundedPart(boot, darkLeather, [0.22, 0.035, 0.33], [0, -0.205, -0.085], 0.015);
+    ring(boot, steel, 0.12, 0.012, [0, -0.11, -0.02], [0, 0, 0]).scale.y = 1.1;
+    segment(boot, steel, [-0.12, -0.24, -0.02], [0.12, -0.24, -0.02], 0.013);
+    for (let j = 0; j < 4; j++) segment(boot, stitch, [-0.035, 0.07 - j * 0.04, -0.16], [0.035, 0.055 - j * 0.04, -0.16], 0.005);
+    // Standalone portraits retain a relaxed pose; the riding solver refits
+    // these real joints to the selected animal's skin once mounted.
+    leg.rotation.z = s * 0.6; leg.rotation.x = 0.25; knee.rotation.x = -0.5;
+    limbs.push({ arm, hand, leg, knee, boot, side: s });
   }
   // Bend the upper body around the hips, leaving the seat and stirrups planted.
   const upperBody = new THREE.Group();
@@ -597,6 +589,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
   const legs = [];
   for (const s of [-1, 1]) {
     const hip = new THREE.Group();
+    hip.userData.suspensionSweep = true;
     hip.position.set(s * 0.49, 1.84, 0.61);
     root.add(hip);
     const thigh = anatomicalPart(hip, [[-0.86, 0.24, 0.13, 0.16], [-0.55, 0.15, 0.23, 0.27], [-0.2, 0.02, 0.33, 0.4], [0.14, -0.05, 0.29, 0.34], [0.33, -0.02, 0.12, 0.16]], skin);
@@ -693,13 +686,16 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
   ellipsoid(saddle, darkLeather, [0, 0.065, 0.04], [0.32, 0.085, 0.37]);
   ellipsoid(saddle, leather, [0, 0.13, 0.37], [0.32, 0.13, 0.065]);
   ellipsoid(saddle, leather, [0, 0.1, -0.33], [0.29, 0.12, 0.06]);
-  segment(saddle, darkLeather, [-0.5, 0, 0.15], [-0.55, -0.64, 0.1], 0.035);
-  segment(saddle, darkLeather, [0.5, 0, 0.15], [0.55, -0.64, 0.1], 0.035);
+  const panniers = [], stirrupStraps = [];
   for (const s of [-1, 1]) {
-    ellipsoid(saddle, leather, [s * 0.53, -0.2, 0.4], [0.13, 0.23, 0.19]);
-    ellipsoid(saddle, steel, [s * 0.66, -0.18, 0.4], [0.01, 0.035, 0.03]);
-    roundedPart(saddle, leather, [0.25, 0.34, 0.36], [s * 0.57, -0.24, 0.49], 0.055);
-    roundedPart(saddle, darkLeather, [0.27, 0.11, 0.37], [s * 0.58, -0.09, 0.49], 0.03);
+    const bag = new THREE.Group(); bag.name = "suspended-pannier"; saddle.add(bag);
+    roundedPart(bag, leather, [0.26, 0.34, 0.36], [0, -0.015, 0], 0.055);
+    roundedPart(bag, darkLeather, [0.28, 0.11, 0.38], [0, 0.145, 0], 0.03);
+    roundedPart(bag, steel, [0.018, 0.055, 0.055], [s * 0.15, 0.07, 0], 0.008);
+    for (const z of [-0.115, 0.115]) segment(bag, darkLeather, [s * 0.14, 0.17, z], [s * 0.14, -0.16, z], 0.012);
+    const bagStrap = new SuspensionStrap(darkLeather), footStrap = new SuspensionStrap(darkLeather);
+    root.add(bagStrap, footStrap);
+    panniers.push({ group: bag, strap: bagStrap, side: s }); stirrupStraps.push(footStrap);
     for (let j = 0; j < 12; j++) segment(saddle, stitch, [s * 0.51, -0.015, -0.52 + j * 0.103], [s * 0.51, -0.015, -0.46 + j * 0.103], 0.006);
   }
   let rider = buildRider(riderIndex);
@@ -742,7 +738,7 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
         quaternion: o.quaternion.clone(),
       });
   });
-  return {
+  const dino = {
     root,
     body,
     neck,
@@ -774,7 +770,14 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     mountId: definition.id,
     sizeScale: definition.sizeScale,
     headCollision: definition.headCollision,
+    panniers,
+    stirrupStraps,
   };
+  root.updateMatrixWorld(true);
+  dino.skinSurface = new SkinSurface(root, [body, ...legs.flatMap(({ hip, shin, foot }) => [hip, shin, foot])]);
+  dino.suspension = new RidingSuspension(dino, dino.skinSurface, panniers, stirrupStraps);
+  animateDinosaur(dino, 0, 0, 0, 0, 0);
+  return dino;
 }
 
 export function cactusContactBounds(dino) {
@@ -873,6 +876,8 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
     arm.rotation.x = duck * 1.78;
   });
   dino.root.updateMatrixWorld(true);
+  dino.skinSurface.update();
+  dino.suspension.update(dt, verticalVelocity, speed);
   dino.reins.forEach((rein, i) => {
     dino.root.worldToLocal(rider.limbs[i].hand.getWorldPosition(dino.reinStart));
     dino.root.worldToLocal(dino.reinAnchors[i].getWorldPosition(dino.reinEnd));

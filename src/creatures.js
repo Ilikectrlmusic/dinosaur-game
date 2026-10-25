@@ -363,7 +363,7 @@ export function buildRider(index = 0) {
     for (let finger = 0; finger < 4; finger++) segment(arm, face, [s * 0.05 + (finger - 1.5) * 0.025, -0.49, -0.48], [s * 0.05 + (finger - 1.5) * 0.025, -0.535, -0.51], 0.012);
     arm.add(curveMesh([[s * 0.07, -0.14, -0.13], [s * 0.14, -0.3, -0.16], [s * 0.075, -0.43, -0.39]], 0.004, stitch, 8));
     const leg = new THREE.Group();
-    leg.position.set(s * 0.22, 2.92, 0.12);
+    leg.position.set(s * 0.24, 2.92, 0.12);
     root.add(leg);
     // The rounded upper sections overlap the trousers around the hip. A
     // flat-ended cylinder left an exposed socket when the leg opened outward.

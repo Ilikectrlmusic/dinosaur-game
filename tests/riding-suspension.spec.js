@@ -6,16 +6,19 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
   await page.goto("/?rig-test");
   const results = await page.evaluate(async () => {
     const source = await (await fetch("/src/main.js")).text();
-    const { Vector3, Raycaster } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
+    const { Vector3, Raycaster, Box3 } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
     const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
     const { advanceJump, JUMP_VELOCITY } = await import("/src/rules.js");
     const { MOUNTS } = await import("/src/mounts.js");
     const results = [], point = new Vector3(), a = new Vector3(), b = new Vector3(), ray = new Raycaster();
     for (const [index, mount] of MOUNTS.entries()) for (const fps of [30, 60, 120]) {
       const dino = buildDinosaur(index, mount.id), dt = 1 / fps;
+      const torso = new Box3();
+      for (const mesh of dino.body.children) if (mesh.isMesh) torso.union(new Box3().setFromObject(mesh, true));
+      const bodyHalf = (torso.max.x - torso.min.x) / 2;
       const skin = dino.skinSurface.profiles.flatMap(({ group }) => group.children.filter((o) => o.isMesh));
       let y = 0, vy = 0, boneError = 0, strapError = 0, penetration = 0, worst = null, maxSpeed = 0;
-      let prior = null, samples = 0, fastest = null, poseDrift = 0, seatedPose;
+      let prior = null, samples = 0, fastest = null, poseDrift = 0, seatedPose, maxAbduction = 0, maxFootSpread = 0, maxBagStrap = 0;
       for (let frame = 0; frame < fps * 4; frame++) {
         const time = frame * dt;
         if (frame === Math.round(fps * 0.7)) vy = JUMP_VELOCITY;
@@ -29,7 +32,9 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
         for (const [i, limb] of dino.rider.limbs.entries()) {
           limb.leg.getWorldPosition(a); limb.knee.getWorldPosition(b);
           boneError = Math.max(boneError, Math.abs(a.distanceTo(b) - 0.56));
+          maxAbduction = Math.max(maxAbduction, Math.atan2(Math.abs(b.x - a.x), a.y - b.y));
           limb.boot.getWorldPosition(a);
+          maxFootSpread = Math.max(maxFootSpread, Math.abs(a.x) / bodyHalf);
           boneError = Math.max(boneError, Math.abs(a.distanceTo(b) - 0.50));
           current.push(...a.toArray());
           limb.boot.localToWorld(a.set(limb.side * 0.1, 0.025, -0.02));
@@ -40,6 +45,10 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
           bag.group.localToWorld(a.set(0, 0.2, 0)); dino.root.worldToLocal(a);
           strapError = Math.max(strapError, a.distanceTo(dino.suspension.chains[i].nodes.at(-1).position));
           bag.group.getWorldPosition(a); current.push(...a.toArray());
+          const nodes = dino.suspension.chains[i].nodes;
+          let length = 0;
+          for (let n = 1; n < nodes.length; n++) length += nodes[n].position.distanceTo(nodes[n - 1].position);
+          maxBagStrap = Math.max(maxBagStrap, length);
         }
         if (prior) for (let i = 0; i < current.length; i += 3) {
           // Subtract the root flight: measure relative hanging motion.
@@ -65,7 +74,7 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
           });
         }
       }
-      results.push({ mount: mount.id, fps, boneError, strapError, penetration, worst, maxSpeed, fastest, samples, poseDrift });
+      results.push({ mount: mount.id, fps, boneError, strapError, penetration, worst, maxSpeed, fastest, samples, poseDrift, maxAbduction, maxFootSpread, maxBagStrap });
     }
     return results;
   });
@@ -73,7 +82,10 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
     expect(result.boneError, JSON.stringify(result)).toBeLessThan(1e-8);
     expect(result.poseDrift, JSON.stringify(result)).toBeLessThan(1e-10);
     expect(result.strapError, JSON.stringify(result)).toBeLessThan(1e-8);
-    expect(result.penetration, JSON.stringify(result.worst)).toBeLessThan(0.005);
+    expect(result.penetration, JSON.stringify({ mount: result.mount, ...result.worst })).toBeLessThan(0.005);
+    expect(result.maxAbduction, JSON.stringify(result)).toBeLessThan(1.0);
+    expect(result.maxFootSpread, JSON.stringify(result)).toBeLessThan(1.55);
+    expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.74);
     expect(result.maxSpeed, JSON.stringify(result)).toBeLessThan(8);
     if (result.fps === 60) expect(result.samples).toBeGreaterThan(500);
   }

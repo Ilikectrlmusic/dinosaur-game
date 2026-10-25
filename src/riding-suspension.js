@@ -102,13 +102,13 @@ export class RidingSuspension {
       if (profile.group === dino.body) bodyWidth = half * dino.body.scale.x * scale;
       if (profile.sweep) thighWidth = Math.max(thighWidth, (Math.abs(profile.group.position.x) + half) * scale);
     }
-    const footWidth = Math.max(bodyWidth + 0.28, thighWidth + 0.10);
+    const footWidth = Math.max(bodyWidth + 0.19, thighWidth * 0.9 + 0.06);
     this.legs = this.rider.limbs.map(({ leg, side }, i) => {
       const hip = leg.position.clone().multiplyScalar(1 / scale).add(this.rider.root.position);
-      const reach = RIDER_THIGH_LENGTH + RIDER_SHIN_LENGTH - 0.07;
-      const drop = Math.sqrt(Math.max(0.20, reach * reach - (footWidth - Math.abs(leg.position.x)) ** 2 - 0.05 ** 2));
-      const foot = new THREE.Vector3(side * footWidth, leg.position.y - drop, leg.position.z - 0.05);
-      const pole = new THREE.Vector3(side * 0.35, -0.2, -0.45).multiplyScalar(1 / scale);
+      const reach = RIDER_THIGH_LENGTH + RIDER_SHIN_LENGTH - 0.10;
+      const drop = Math.sqrt(Math.max(0.20, reach * reach - (footWidth - Math.abs(leg.position.x)) ** 2 - 0.22 ** 2));
+      const foot = new THREE.Vector3(side * footWidth, leg.position.y - drop, leg.position.z - 0.22);
+      const pole = new THREE.Vector3(side * 0.30, -0.2, -0.55).multiplyScalar(1 / scale);
       const knee = hip.clone().add(pole);
       const ankle = foot.clone().multiplyScalar(1 / scale).add(this.rider.root.position);
       const start = this.start(side, 0.03), end = ankle.clone();
@@ -116,15 +116,15 @@ export class RidingSuspension {
       return { side, foot, pole, nodes: [particle(hip, 0), particle(knee, 0), particle(ankle, 0)], chain };
     });
     if (!this.chains.length) this.chains = this.panniers.map(({ side, strap }) => {
-      const start = this.start(side, 0.65);
-      return new HangingChain(start, start.clone().add(new THREE.Vector3(side * 0.54, -0.35, 0)), 0.84, side, strap, new THREE.Vector3(0.145, 0.2, 0.205));
+      const start = this.start(side, 0.65, 0.54);
+      return new HangingChain(start, start.clone().add(new THREE.Vector3(side * 0.48, -0.22, 0)), 0.62, side, strap, new THREE.Vector3(0.145, 0.2, 0.205));
     });
     for (let i = 0; i < 100; i++) this.constrain();
     for (const leg of this.legs) leg.nodes.forEach((node) => node.previous.copy(node.position));
     for (const chain of this.chains) chain.nodes.forEach((node) => node.previous.copy(node.position));
     this.accumulator = 0;
   }
-  start(side, z) { return new THREE.Vector3(side * 0.44, this.dino.saddle.position.y + 0.025, z); }
+  start(side, z, width = 0.44) { return new THREE.Vector3(side * width, this.dino.saddle.position.y + 0.025, z); }
 
   constrain() {
     for (const chain of this.chains) chain.constrain(this.surface);
@@ -140,7 +140,7 @@ export class RidingSuspension {
       leg.nodes[1].position.copy(leg.nodes[0].position).add(leg.pole);
       leg.nodes[2].position.copy(leg.foot).multiplyScalar(1 / scale).add(this.rider.root.position);
     }
-    this.chains.forEach((chain) => chain.nodes[0].position.copy(this.start(chain.side, 0.65)));
+    this.chains.forEach((chain) => chain.nodes[0].position.copy(this.start(chain.side, 0.65, 0.54)));
     this.accumulator += step;
     while (this.accumulator >= STEP - 1e-8) {
       this.accumulator -= STEP;

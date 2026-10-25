@@ -18,7 +18,7 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
       const bodyHalf = (torso.max.x - torso.min.x) / 2;
       const skin = dino.skinSurface.profiles.flatMap(({ group }) => group.children.filter((o) => o.isMesh));
       let y = 0, vy = 0, boneError = 0, strapError = 0, meshPinError = 0, penetration = 0, worst = null, maxSpeed = 0;
-      let prior = null, samples = 0, fastest = null, poseDrift = 0, seatedPose, maxAbduction = 0, maxFootSpread = 0, maxBagStrap = 0;
+      let prior = null, samples = 0, fastest = null, poseDrift = 0, seatedPose, maxAbduction = 0, maxFootSpread = 0, maxBagStrap = 0, maxRenderedStrap = 0;
       for (let frame = 0; frame < fps * 4; frame++) {
         const time = frame * dt;
         if (frame === Math.round(fps * 0.7)) vy = JUMP_VELOCITY;
@@ -51,6 +51,15 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
           maxBagStrap = Math.max(maxBagStrap, length);
           const positions = bag.strap.geometry.attributes.position;
           for (let lane = 0; lane < 2; lane++) {
+            let renderedLength = 0;
+            for (let n = 0; n < nodes.length; n++) {
+              point.set(0, 0, 0);
+              for (let j = 0; j < 4; j++) point.add(vertex.fromBufferAttribute(positions, (lane * nodes.length + n) * 4 + j));
+              point.multiplyScalar(0.25);
+              if (n) renderedLength += point.distanceTo(b);
+              b.copy(point);
+            }
+            maxRenderedStrap = Math.max(maxRenderedStrap, renderedLength);
             point.set(0, 0, 0);
             const firstVertex = (lane * nodes.length + nodes.length - 1) * 4;
             for (let j = 0; j < 4; j++) point.add(vertex.fromBufferAttribute(positions, firstVertex + j));
@@ -83,7 +92,7 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
           });
         }
       }
-      results.push({ mount: mount.id, fps, boneError, strapError, meshPinError, penetration, worst, maxSpeed, fastest, samples, poseDrift, maxAbduction, maxFootSpread, maxBagStrap });
+      results.push({ mount: mount.id, fps, boneError, strapError, meshPinError, penetration, worst, maxSpeed, fastest, samples, poseDrift, maxAbduction, maxFootSpread, maxBagStrap, maxRenderedStrap });
     }
     return results;
   });
@@ -95,7 +104,8 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
     expect(result.penetration, JSON.stringify({ mount: result.mount, ...result.worst })).toBeLessThan(0.005);
     expect(result.maxAbduction, JSON.stringify(result)).toBeLessThan(1.0);
     expect(result.maxFootSpread, JSON.stringify(result)).toBeLessThan(1.55);
-    expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.74);
+    expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.34);
+    expect(result.maxRenderedStrap, JSON.stringify(result)).toBeLessThan(0.36);
     expect(result.maxSpeed, JSON.stringify(result)).toBeLessThan(8);
     if (result.fps === 60) expect(result.samples).toBeGreaterThan(500);
   }
@@ -119,18 +129,17 @@ test("all panniers rest against actual flanks from the first camp frame, includi
         if (frame) animateDinosaur(dino, frame / 60, 0, 0, 0, 1 / 60);
         if (![0, 1, 15, 30, 60, 120].includes(frame)) continue;
         for (const { group, side } of dino.panniers) {
-          // Probe the middle of the real inner face. A single touching
-          // bottom corner must not hide a large floating gap above it.
+          // Check every point across the inner face, including its rear edge.
+          // Looking from behind must not reveal a gap hidden by a lower corner.
           for (const z of [-0.12, 0, 0.12]) {
-            let closest = Infinity;
             for (const y of [-0.06, 0, 0.06]) {
               group.localToWorld(point.set(-side * 0.13, y, z));
               ray.set(origin.set(side * 3, point.y, point.z), direction.set(-side, 0, 0));
               const hit = ray.intersectObjects(skin, false)[0];
-              if (hit) closest = Math.min(closest, side * (point.x - hit.point.x));
+              const gap = hit ? side * (point.x - hit.point.x) : Infinity;
+              samples++;
+              if (gap > largestGap) { largestGap = gap; worst = { frame, side, y, z, gap }; }
             }
-            samples++;
-            if (closest > largestGap) { largestGap = closest; worst = { frame, side, z, gap: closest }; }
           }
         }
       }
@@ -139,7 +148,7 @@ test("all panniers rest against actual flanks from the first camp frame, includi
     return results;
   });
   for (const result of results) {
-    expect(result.largestGap, JSON.stringify(result)).toBeLessThan(0.10);
-    expect(result.samples).toBe(36);
+    expect(result.largestGap, JSON.stringify(result)).toBeLessThan(0.065);
+    expect(result.samples).toBe(108);
   }
 });

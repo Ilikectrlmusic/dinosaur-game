@@ -1,7 +1,10 @@
 import * as THREE from "three";
 
 export const RIDER_THIGH_LENGTH = 0.56, RIDER_SHIN_LENGTH = 0.50;
-export const PANNIER_ANCHOR_Z = 0.60;
+export const PANNIER_ANCHOR_Z = 0.25;
+export const PANNIER_ANCHOR_WIDTH = 0.32;
+export const PANNIER_ANCHOR_Y = 0.145;
+export const PANNIER_STRAP_LENGTH = 0.31;
 const DOWN = new THREE.Vector3(0, -1, 0), STEP = 1 / 120;
 const clamp = THREE.MathUtils.clamp;
 
@@ -84,18 +87,20 @@ class HangingChain {
   orient(surface, dt) {
     if (!this.box) return;
     const end = this.nodes.at(-1);
-    this.euler.z = THREE.MathUtils.damp(this.euler.z, surface.boxRoll(end.position, this.box, this.side), 10, dt);
-    this.euler.y = THREE.MathUtils.damp(this.euler.y, surface.boxYaw(end.position, this.box, this.side), 10, dt);
+    this.euler.z = THREE.MathUtils.damp(this.euler.z, surface.boxRoll(end.position, this.box, this.side) ?? this.euler.z, 10, dt);
+    this.euler.y = THREE.MathUtils.damp(this.euler.y, surface.boxYaw(end.position, this.box, this.side) ?? this.euler.y, 10, dt);
     const pitch = clamp((end.position.z - end.previous.z) / Math.max(dt, STEP) * 0.06, -0.08, 0.08);
     this.euler.x = THREE.MathUtils.damp(this.euler.x, pitch, 12, dt);
     this.rotation.setFromEuler(this.euler);
   }
   constrain(surface) {
+    // Resolve tension from both ends, so loaded short straps keep their length.
+    for (let i = 7; i >= 0; i--) distance(this.nodes[i], this.nodes[i + 1], this.length / 8);
     for (let i = 0; i < 8; i++) distance(this.nodes[i], this.nodes[i + 1], this.length / 8);
     for (let i = 1; i < this.nodes.length; i++) {
       if (this.pinnedEnd && i === 8) continue;
       const p = this.nodes[i].position;
-      if (i === 8 && this.box) surface.projectBox(p, this.box, this.side, this.rotation);
+      if (i === 8 && this.box) surface.projectBox(p, this.box, this.side, this.rotation, this.nodes[0].position, this.length);
       else surface.projectSphere(p, 0.024, this.side);
     }
   }
@@ -119,10 +124,7 @@ export class RidingSuspension {
     // allowing each moving thigh to push the rider into a different pose.
     let bodyWidth = 0, thighWidth = 0;
     for (const profile of this.surface.profiles) {
-      let half = 0;
-      for (let i = 0; i < profile.right.length; i++) {
-        if (Number.isFinite(profile.right[i])) half = Math.max(half, Math.abs(profile.right[i]), Math.abs(profile.left[i]));
-      }
+      const half = profile.halfWidth;
       if (profile.group === dino.body) bodyWidth = half * dino.body.scale.x * scale;
       if (profile.group.userData.suspensionSweep) thighWidth = Math.max(thighWidth, (Math.abs(profile.group.position.x) + half) * scale);
     }
@@ -141,8 +143,10 @@ export class RidingSuspension {
     });
     if (!this.chains.length) {
       this.chains = this.panniers.map(({ side, strap }) => {
-        const start = this.start(side, PANNIER_ANCHOR_Z, 0.54);
-        return new HangingChain(start, start.clone().add(new THREE.Vector3(side * 0.24, -0.45, 0)), 0.62, side, strap, new THREE.Vector3(0.145, 0.2, 0.205));
+        const start = this.pannierStart(side);
+        const chain = new HangingChain(start, start.clone().add(new THREE.Vector3(side * 0.26, -0.16, 0)), PANNIER_STRAP_LENGTH, side, strap, new THREE.Vector3(0.14, 0.2, 0.19));
+        chain.orient(this.surface, 1);
+        return chain;
       });
       // Settle the loaded straps before the first render or a mount change.
       // The construction pose must not leave a wide, weightless-looking gap.
@@ -159,6 +163,7 @@ export class RidingSuspension {
     this.accumulator = 0;
   }
   start(side, z, width = 0.44) { return new THREE.Vector3(side * width, this.dino.saddle.position.y + 0.025, z); }
+  pannierStart(side) { return new THREE.Vector3(side * PANNIER_ANCHOR_WIDTH * this.dino.body.scale.x, this.dino.saddle.position.y + PANNIER_ANCHOR_Y, PANNIER_ANCHOR_Z); }
 
   constrain() {
     for (const chain of this.chains) chain.constrain(this.surface);
@@ -174,7 +179,7 @@ export class RidingSuspension {
       leg.nodes[1].position.copy(leg.nodes[0].position).add(leg.pole);
       leg.nodes[2].position.copy(leg.foot).multiplyScalar(1 / scale).add(this.rider.root.position);
     }
-    this.chains.forEach((chain) => chain.nodes[0].position.copy(this.start(chain.side, PANNIER_ANCHOR_Z, 0.54)));
+    this.chains.forEach((chain) => chain.nodes[0].position.copy(this.pannierStart(chain.side)));
     this.accumulator += step;
     while (this.accumulator >= STEP - 1e-8) {
       this.accumulator -= STEP;

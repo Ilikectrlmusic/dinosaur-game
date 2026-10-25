@@ -4,7 +4,7 @@ import * as THREE from "three";
 // move the profiles with the animal; runtime contact needs no triangle casts.
 function profileFor(group, cell = 0.035) {
   const vertices = [], point = new THREE.Vector3();
-  let minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  let halfWidth = 0, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
   for (const mesh of group.children) {
     if (!mesh.isMesh || mesh.userData.keepSeparate) continue;
     mesh.updateMatrix();
@@ -13,6 +13,7 @@ function profileFor(group, cell = 0.035) {
     for (let i = 0; i < count; i++) {
       point.fromBufferAttribute(positions, indices ? indices.getX(i) : i).applyMatrix4(mesh.matrix);
       vertices.push(point.x, point.y, point.z);
+      halfWidth = Math.max(halfWidth, Math.abs(point.x));
       minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
       minZ = Math.min(minZ, point.z); maxZ = Math.max(maxZ, point.z);
     }
@@ -24,16 +25,22 @@ function profileFor(group, cell = 0.035) {
   for (let i = 0; i < vertices.length; i += 9) {
     const ys = [vertices[i + 1], vertices[i + 4], vertices[i + 7]];
     const zs = [vertices[i + 2], vertices[i + 5], vertices[i + 8]];
-    const lo = Math.min(vertices[i], vertices[i + 3], vertices[i + 6]);
-    const hi = Math.max(vertices[i], vertices[i + 3], vertices[i + 6]);
+    const xs = [vertices[i], vertices[i + 3], vertices[i + 6]];
+    const area = (ys[1] - ys[0]) * (zs[2] - zs[0]) - (ys[2] - ys[0]) * (zs[1] - zs[0]);
+    if (Math.abs(area) < 1e-10) continue;
     const y0 = Math.floor((Math.min(...ys) - minY) / cell), y1 = Math.ceil((Math.max(...ys) - minY) / cell);
     const z0 = Math.floor((Math.min(...zs) - minZ) / cell), z1 = Math.ceil((Math.max(...zs) - minZ) / cell);
     for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+      const py = minY + y * cell, pz = minZ + z * cell;
+      const b = ((py - ys[0]) * (zs[2] - zs[0]) - (pz - zs[0]) * (ys[2] - ys[0])) / area;
+      const c = ((ys[1] - ys[0]) * (pz - zs[0]) - (zs[1] - zs[0]) * (py - ys[0])) / area;
+      if (b < -1e-6 || c < -1e-6 || b + c > 1 + 1e-6) continue;
+      const x = xs[0] + b * (xs[1] - xs[0]) + c * (xs[2] - xs[0]);
       const index = y * columns + z;
-      left[index] = Math.min(left[index], lo); right[index] = Math.max(right[index], hi);
+      left[index] = Math.min(left[index], x); right[index] = Math.max(right[index], x);
     }
   }
-  return { group, cell, rows, columns, minY, maxY, minZ, maxZ, left, right,
+  return { group, cell, rows, columns, halfWidth, minY, maxY, minZ, maxZ, left, right,
     frame: new THREE.Matrix4(), inverse: new THREE.Matrix4() };
 }
 
@@ -45,6 +52,7 @@ export class SkinSurface {
     this.point = new THREE.Vector3();
     this.probe = new THREE.Vector3();
     this.offset = new THREE.Vector3();
+    this.hangingPoint = new THREE.Vector3();
     this.update();
   }
 
@@ -102,8 +110,8 @@ export class SkinSurface {
       this.probe.y -= half.y * 1.5;
       lower = Math.max(lower, this.outside(this.probe, side));
     }
-    if (!Number.isFinite(upper) || !Number.isFinite(lower)) return 0;
-    return side * THREE.MathUtils.clamp(Math.atan2(lower - upper, half.y * 1.5), -0.35, 0.75);
+    if (!Number.isFinite(upper) || !Number.isFinite(lower)) return null;
+    return side * THREE.MathUtils.clamp(Math.atan2(lower - upper, half.y * 1.5), -0.35, 1.15);
   }
 
   boxYaw(top, half, side) {
@@ -114,11 +122,11 @@ export class SkinSurface {
       this.probe.z += half.z * 1.5;
       rear = Math.max(rear, this.outside(this.probe, side));
     }
-    if (!Number.isFinite(front) || !Number.isFinite(rear)) return 0;
+    if (!Number.isFinite(front) || !Number.isFinite(rear)) return null;
     return side * THREE.MathUtils.clamp(Math.atan2(rear - front, half.z * 1.5), -0.75, 0.75);
   }
 
-  projectBox(top, half, side, rotation = null) {
+  boxClearance(top, half, side, rotation = null) {
     // The last rope point is the box's top fastening, not its centre.
     let correction = 0;
     for (const face of rotation ? [-1, 1] : [-1])
@@ -126,9 +134,39 @@ export class SkinSurface {
         this.offset.set(side * face * half.x, dy, dz);
         if (rotation) this.offset.applyQuaternion(rotation);
         this.probe.copy(top).add(this.offset);
-        correction = Math.max(correction, this.outside(this.probe, side) + 0.01 - side * this.probe.x);
+        correction = Math.max(correction, this.outside(this.probe, side) + 0.004 - side * this.probe.x);
       }
+    return correction;
+  }
+
+  projectBox(top, half, side, rotation = null, anchor = null, length = 0) {
+    const correction = this.boxClearance(top, half, side, rotation);
     top.x += side * correction;
+    if (!anchor || top.distanceTo(anchor) <= length * 1.005) return correction;
+    // A short strap cannot stretch sideways when a thigh rises underneath.
+    // Let the bag ride up the flank instead, retaining the available reach.
+    const radius = length * 0.98, dz = top.z - anchor.z;
+    const reach = Math.sqrt(Math.max(0.0001, radius * radius - dz * dz));
+    const candidate = this.hangingPoint;
+    const start = THREE.MathUtils.clamp(Math.atan2(top.y - anchor.y, side * (top.x - anchor.x)), -Math.PI / 2, Math.PI / 2);
+    let lower = start, upper = Math.PI / 2, found = false;
+    for (let i = 0; i <= 24; i++) {
+      const angle = THREE.MathUtils.lerp(start, Math.PI / 2, i / 24);
+      candidate.set(anchor.x + side * reach * Math.cos(angle), anchor.y + reach * Math.sin(angle), top.z);
+      if (this.boxClearance(candidate, half, side, rotation) < 0.0001) {
+        upper = angle; lower = i ? THREE.MathUtils.lerp(start, Math.PI / 2, (i - 1) / 24) : start; found = true; break;
+      }
+    }
+    if (found) {
+      for (let i = 0; i < 8; i++) {
+        const angle = (lower + upper) / 2;
+        candidate.set(anchor.x + side * reach * Math.cos(angle), anchor.y + reach * Math.sin(angle), top.z);
+        if (this.boxClearance(candidate, half, side, rotation) < 0.0001) upper = angle;
+        else lower = angle;
+      }
+      top.set(anchor.x + side * reach * Math.cos(upper), anchor.y + reach * Math.sin(upper), top.z);
+      top.x += side * this.boxClearance(top, half, side, rotation);
+    }
     return correction;
   }
 }

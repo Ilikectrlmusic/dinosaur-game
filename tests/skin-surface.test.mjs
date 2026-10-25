@@ -54,3 +54,28 @@ test("an empty region above a thigh cannot push luggage away from the real skin"
   surface.projectBox(top, new THREE.Vector3(0.145, 0.2, 0.205), 1);
   assert.ok(top.distanceTo(initial) < 1e-10);
 });
+
+test("sloping skin uses triangle intersections instead of each triangle's widest vertex", () => {
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const geometry = new THREE.BoxGeometry(1, 1, 1), vertices = geometry.attributes.position;
+  for (let i = 0; i < vertices.count; i++) vertices.setX(i, vertices.getX(i) + 0.4 * vertices.getY(i) + 0.2 * vertices.getZ(i));
+  body.add(new THREE.Mesh(geometry)); root.updateMatrixWorld(true);
+  const surface = new SkinSurface(root, [body]);
+  for (const side of [-1, 1]) for (const y of [-0.35, 0, 0.35]) for (const z of [-0.35, 0.2]) {
+    const actual = surface.outside(new THREE.Vector3(0, y, z), side);
+    assert.ok(Math.abs(actual - (0.5 + side * (0.4 * y + 0.2 * z))) < 1e-6);
+  }
+});
+
+test("a rising flank lifts a hanging box without stretching its short strap", () => {
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  body.add(new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32))); root.updateMatrixWorld(true);
+  const surface = new SkinSurface(root, [body]), half = new THREE.Vector3(0.145, 0.2, 0.205);
+  for (const side of [-1, 1]) {
+    const anchor = new THREE.Vector3(side * 0.35, 1.13, 0), top = new THREE.Vector3(side * 0.55, 0.85, 0);
+    surface.projectBox(top, half, side, new THREE.Quaternion(), anchor, 0.31);
+    assert.ok(top.y > 0.85);
+    assert.ok(top.distanceTo(anchor) < 0.312);
+    assert.ok(surface.boxClearance(top, half, side) < 0.001);
+  }
+});

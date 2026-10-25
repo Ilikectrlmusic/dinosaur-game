@@ -104,10 +104,58 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
     expect(result.penetration, JSON.stringify({ mount: result.mount, ...result.worst })).toBeLessThan(0.005);
     expect(result.maxAbduction, JSON.stringify(result)).toBeLessThan(1.0);
     expect(result.maxFootSpread, JSON.stringify(result)).toBeLessThan(1.55);
-    expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.34);
-    expect(result.maxRenderedStrap, JSON.stringify(result)).toBeLessThan(0.36);
+    expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.38);
+    expect(result.maxRenderedStrap, JSON.stringify(result)).toBeLessThan(0.40);
     expect(result.maxSpeed, JSON.stringify(result)).toBeLessThan(8);
     if (result.fps === 60) expect(result.samples).toBeGreaterThan(500);
+  }
+});
+
+test("camp ropes remain bounded through slow startup frames before any camera or gameplay input", async ({ page }) => {
+  test.setTimeout(120000);
+  await page.route("**/?slow-camp-test", (route) => route.fulfill({ contentType: "text/html", body: "<html><body></body></html>" }));
+  await page.goto("/?slow-camp-test");
+  const results = await page.evaluate(async () => {
+    const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
+    const { MOUNTS } = await import("/src/mounts.js");
+    const profiles = {
+      steady30: Array(90).fill(1 / 30),
+      startupStalls: Array.from({ length: 90 }, (_, i) => [0.25, 0.1, 0.05][i % 3]),
+      recovering: Array.from({ length: 90 }, (_, i) => i < 30 ? 0.25 : [1 / 120, 1 / 60, 1 / 30][i % 3]),
+    };
+    const results = [];
+    for (const mount of MOUNTS) for (const [profile, frames] of Object.entries(profiles)) {
+      const dino = buildDinosaur(1, mount.id);
+      const ropes = [...dino.reins, ...dino.stirrupStraps, ...dino.panniers.map(({ strap }) => strap)];
+      const buffers = ropes.map((rope) => rope.geometry.attributes.position.array);
+      let time = 0, maxCoordinate = 0, maxStretch = 1, finite = true, reused = true;
+      for (const dt of frames) {
+        time += dt;
+        animateDinosaur(dino, time, 0, 0, 0, dt);
+        for (const [i, rope] of ropes.entries()) {
+          const { position, normal } = rope.geometry.attributes;
+          reused &&= position.array === buffers[i];
+          for (const value of position.array) {
+            finite &&= Number.isFinite(value);
+            maxCoordinate = Math.max(maxCoordinate, Math.abs(value));
+          }
+          finite &&= normal.array.every(Number.isFinite);
+        }
+        for (const chain of [...dino.suspension.chains, ...dino.suspension.legs.map(({ chain }) => chain)]) {
+          let length = 0;
+          for (let n = 1; n < chain.nodes.length; n++) length += chain.nodes[n].position.distanceTo(chain.nodes[n - 1].position);
+          maxStretch = Math.max(maxStretch, length / chain.length);
+        }
+      }
+      results.push({ mount: mount.id, profile, finite, reused, maxCoordinate, maxStretch });
+    }
+    return results;
+  });
+  for (const result of results) {
+    expect(result.finite, JSON.stringify(result)).toBe(true);
+    expect(result.reused, JSON.stringify(result)).toBe(true);
+    expect(result.maxCoordinate, JSON.stringify(result)).toBeLessThan(5);
+    expect(result.maxStretch, JSON.stringify(result)).toBeLessThan(1.15);
   }
 });
 

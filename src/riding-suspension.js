@@ -4,7 +4,7 @@ export const RIDER_THIGH_LENGTH = 0.56, RIDER_SHIN_LENGTH = 0.50;
 export const PANNIER_ANCHOR_Z = 0.25;
 export const PANNIER_ANCHOR_WIDTH = 0.32;
 export const PANNIER_ANCHOR_Y = 0.145;
-export const PANNIER_STRAP_LENGTH = 0.31;
+export const PANNIER_STRAP_LENGTH = 0.35;
 const DOWN = new THREE.Vector3(0, -1, 0), STEP = 1 / 120;
 const clamp = THREE.MathUtils.clamp;
 
@@ -167,6 +167,9 @@ export class RidingSuspension {
 
   constrain() {
     for (const chain of this.chains) chain.constrain(this.surface);
+    // Stirrup straps need the same fixed-step constraints as their integration.
+    // Solving them only once per rendered frame makes slow camp frames unstable.
+    for (const leg of this.legs) leg.chain.constrain(this.surface);
   }
   update(dt, verticalVelocity = 0, speed = 14) {
     if (this.rider !== this.dino.rider) this.resetRider();

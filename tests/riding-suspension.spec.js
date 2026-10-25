@@ -10,14 +10,14 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
     const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
     const { advanceJump, JUMP_VELOCITY } = await import("/src/rules.js");
     const { MOUNTS } = await import("/src/mounts.js");
-    const results = [], point = new Vector3(), a = new Vector3(), b = new Vector3(), ray = new Raycaster();
+    const results = [], point = new Vector3(), vertex = new Vector3(), a = new Vector3(), b = new Vector3(), ray = new Raycaster();
     for (const [index, mount] of MOUNTS.entries()) for (const fps of [30, 60, 120]) {
       const dino = buildDinosaur(index, mount.id), dt = 1 / fps;
       const torso = new Box3();
       for (const mesh of dino.body.children) if (mesh.isMesh) torso.union(new Box3().setFromObject(mesh, true));
       const bodyHalf = (torso.max.x - torso.min.x) / 2;
       const skin = dino.skinSurface.profiles.flatMap(({ group }) => group.children.filter((o) => o.isMesh));
-      let y = 0, vy = 0, boneError = 0, strapError = 0, penetration = 0, worst = null, maxSpeed = 0;
+      let y = 0, vy = 0, boneError = 0, strapError = 0, meshPinError = 0, penetration = 0, worst = null, maxSpeed = 0;
       let prior = null, samples = 0, fastest = null, poseDrift = 0, seatedPose, maxAbduction = 0, maxFootSpread = 0, maxBagStrap = 0;
       for (let frame = 0; frame < fps * 4; frame++) {
         const time = frame * dt;
@@ -49,6 +49,15 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
           let length = 0;
           for (let n = 1; n < nodes.length; n++) length += nodes[n].position.distanceTo(nodes[n - 1].position);
           maxBagStrap = Math.max(maxBagStrap, length);
+          const positions = bag.strap.geometry.attributes.position;
+          for (let lane = 0; lane < 2; lane++) {
+            point.set(0, 0, 0);
+            const firstVertex = (lane * nodes.length + nodes.length - 1) * 4;
+            for (let j = 0; j < 4; j++) point.add(vertex.fromBufferAttribute(positions, firstVertex + j));
+            point.multiplyScalar(0.25);
+            bag.group.localToWorld(b.set(0, 0.2, lane ? 0.12 : -0.12)); dino.root.worldToLocal(b);
+            meshPinError = Math.max(meshPinError, point.distanceTo(b));
+          }
         }
         if (prior) for (let i = 0; i < current.length; i += 3) {
           // Subtract the root flight: measure relative hanging motion.
@@ -74,7 +83,7 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
           });
         }
       }
-      results.push({ mount: mount.id, fps, boneError, strapError, penetration, worst, maxSpeed, fastest, samples, poseDrift, maxAbduction, maxFootSpread, maxBagStrap });
+      results.push({ mount: mount.id, fps, boneError, strapError, meshPinError, penetration, worst, maxSpeed, fastest, samples, poseDrift, maxAbduction, maxFootSpread, maxBagStrap });
     }
     return results;
   });
@@ -82,11 +91,55 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
     expect(result.boneError, JSON.stringify(result)).toBeLessThan(1e-8);
     expect(result.poseDrift, JSON.stringify(result)).toBeLessThan(1e-10);
     expect(result.strapError, JSON.stringify(result)).toBeLessThan(1e-8);
+    expect(result.meshPinError, JSON.stringify(result)).toBeLessThan(5e-7);
     expect(result.penetration, JSON.stringify({ mount: result.mount, ...result.worst })).toBeLessThan(0.005);
     expect(result.maxAbduction, JSON.stringify(result)).toBeLessThan(1.0);
     expect(result.maxFootSpread, JSON.stringify(result)).toBeLessThan(1.55);
     expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.74);
     expect(result.maxSpeed, JSON.stringify(result)).toBeLessThan(8);
     if (result.fps === 60) expect(result.samples).toBeGreaterThan(500);
+  }
+});
+
+test("all panniers rest against actual flanks from the first camp frame, including the smallest mount", async ({ page }) => {
+  test.setTimeout(90000);
+  await page.route("**/?pannier-test", (route) => route.fulfill({ contentType: "text/html", body: "<html><body></body></html>" }));
+  await page.goto("/?pannier-test");
+  const results = await page.evaluate(async () => {
+    const source = await (await fetch("/src/main.js")).text();
+    const { Vector3, Raycaster } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
+    const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
+    const { MOUNTS } = await import("/src/mounts.js");
+    const point = new Vector3(), origin = new Vector3(), direction = new Vector3(), ray = new Raycaster(), results = [];
+    for (const mount of MOUNTS) {
+      const dino = buildDinosaur(0, mount.id);
+      const skin = dino.skinSurface.profiles.flatMap(({ group }) => group.children.filter((o) => o.isMesh));
+      let largestGap = 0, samples = 0, worst = null;
+      for (let frame = 0; frame <= 120; frame++) {
+        if (frame) animateDinosaur(dino, frame / 60, 0, 0, 0, 1 / 60);
+        if (![0, 1, 15, 30, 60, 120].includes(frame)) continue;
+        for (const { group, side } of dino.panniers) {
+          // Probe the middle of the real inner face. A single touching
+          // bottom corner must not hide a large floating gap above it.
+          for (const z of [-0.12, 0, 0.12]) {
+            let closest = Infinity;
+            for (const y of [-0.06, 0, 0.06]) {
+              group.localToWorld(point.set(-side * 0.13, y, z));
+              ray.set(origin.set(side * 3, point.y, point.z), direction.set(-side, 0, 0));
+              const hit = ray.intersectObjects(skin, false)[0];
+              if (hit) closest = Math.min(closest, side * (point.x - hit.point.x));
+            }
+            samples++;
+            if (closest > largestGap) { largestGap = closest; worst = { frame, side, z, gap: closest }; }
+          }
+        }
+      }
+      results.push({ mount: mount.id, largestGap, worst, samples });
+    }
+    return results;
+  });
+  for (const result of results) {
+    expect(result.largestGap, JSON.stringify(result)).toBeLessThan(0.10);
+    expect(result.samples).toBe(36);
   }
 });

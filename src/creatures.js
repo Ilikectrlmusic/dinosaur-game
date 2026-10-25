@@ -8,7 +8,7 @@ import { DinosaurGait, solveLeg } from "./dinosaur-gait.js";
 import { cactusArmPoint } from "./cactus-shape.js";
 import { cactusArmGeometry, wingMembraneGeometry, wingPoint } from "./obstacle-detail.js";
 import { SkinSurface } from "./skin-surface.js";
-import { RidingSuspension, SuspensionStrap, RIDER_THIGH_LENGTH, RIDER_SHIN_LENGTH } from "./riding-suspension.js";
+import { RidingSuspension, SuspensionStrap, RIDER_THIGH_LENGTH, RIDER_SHIN_LENGTH, PANNIER_ANCHOR_Z } from "./riding-suspension.js";
 
 const saddleAnchor = new THREE.Vector3(0, 2.61, 0.15);
 
@@ -699,7 +699,11 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     roundedPart(bag, darkLeather, [0.28, 0.11, 0.38], [0, 0.145, 0], 0.03);
     roundedPart(bag, steel, [0.018, 0.055, 0.055], [s * 0.15, 0.07, 0], 0.008);
     for (const z of [-0.115, 0.115]) segment(bag, darkLeather, [s * 0.14, 0.17, z], [s * 0.14, -0.16, z], 0.012);
-    const bagStrap = new SuspensionStrap(darkLeather), footStrap = new SuspensionStrap(darkLeather);
+    for (const z of [-0.12, 0.12]) {
+      ring(bag, steel, 0.03, 0.007, [0, 0.2, z], [0, 0, 0]);
+      ring(saddle, steel, 0.025, 0.006, [s * 0.54, 0.025, PANNIER_ANCHOR_Z + z - saddle.position.z], [0, 0, 0]);
+    }
+    const bagStrap = new SuspensionStrap(darkLeather, 8, 2), footStrap = new SuspensionStrap(darkLeather);
     root.add(bagStrap, footStrap);
     panniers.push({ group: bag, strap: bagStrap, side: s }); stirrupStraps.push(footStrap);
     for (let j = 0; j < 12; j++) segment(saddle, stitch, [s * 0.51, -0.015, -0.52 + j * 0.103], [s * 0.51, -0.015, -0.46 + j * 0.103], 0.006);

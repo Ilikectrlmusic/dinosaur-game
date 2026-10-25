@@ -39,3 +39,18 @@ test("hanging box contacts include its lower corners, and repeated queries reuse
   assert.equal(surface.profiles[0].right, field);
   assert.ok(Number.isFinite(top.x) && top.x < 1.2);
 });
+
+test("an empty region above a thigh cannot push luggage away from the real skin", () => {
+  const root = new THREE.Group(), hip = new THREE.Group();
+  hip.position.set(0.5, 1.8, 0.6); hip.userData.suspensionSweep = true; root.add(hip);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24));
+  mesh.scale.set(0.27, 0.6, 0.23); mesh.position.y = -0.4; hip.add(mesh);
+  root.updateMatrixWorld(true);
+  const surface = new SkinSurface(root, [hip]);
+  const top = new THREE.Vector3(0.56, 2.65, 0.6), initial = top.clone();
+  surface.projectBox(top, new THREE.Vector3(0.145, 0.2, 0.205), 1);
+  assert.ok(top.distanceTo(initial) < 1e-10);
+  hip.rotation.x = 0.4; root.updateMatrixWorld(true); surface.update();
+  surface.projectBox(top, new THREE.Vector3(0.145, 0.2, 0.205), 1);
+  assert.ok(top.distanceTo(initial) < 1e-10);
+});

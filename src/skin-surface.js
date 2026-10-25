@@ -33,31 +33,7 @@ function profileFor(group, cell = 0.035) {
       left[index] = Math.min(left[index], lo); right[index] = Math.max(right[index], hi);
     }
   }
-  let sweep = null;
-  if (group.userData.suspensionSweep) {
-    // The mount's muscular thigh passes beneath a hanging foot every stride.
-    // Reserve its swept skin contour so the boot/bag does not first drift
-    // inward and then get kicked out by the next advancing thigh.
-    const radialLeft = new Float32Array(64).fill(Infinity), radialRight = new Float32Array(64).fill(-Infinity);
-    const edgeDistance = (ay, az, by, bz) => {
-      const dy = by - ay, dz = bz - az;
-      const t = THREE.MathUtils.clamp(-(ay * dy + az * dz) / Math.max(1e-12, dy * dy + dz * dz), 0, 1);
-      return Math.hypot(ay + dy * t, az + dz * t);
-    };
-    for (let i = 0; i < vertices.length; i += 9) {
-      const ay = vertices[i + 1], az = vertices[i + 2], by = vertices[i + 4], bz = vertices[i + 5], cy = vertices[i + 7], cz = vertices[i + 8];
-      const crosses = [ay * bz - az * by, by * cz - bz * cy, cy * az - cz * ay];
-      const contains = crosses.every((n) => n >= 0) || crosses.every((n) => n <= 0);
-      const low = contains ? 0 : Math.min(edgeDistance(ay, az, by, bz), edgeDistance(by, bz, cy, cz), edgeDistance(cy, cz, ay, az));
-      const high = Math.max(Math.hypot(ay, az), Math.hypot(by, bz), Math.hypot(cy, cz));
-      const lo = Math.min(vertices[i], vertices[i + 3], vertices[i + 6]), hi = Math.max(vertices[i], vertices[i + 3], vertices[i + 6]);
-      for (let r = Math.floor(low / cell); r <= Math.ceil(high / cell); r++) {
-        radialLeft[r] = Math.min(radialLeft[r], lo); radialRight[r] = Math.max(radialRight[r], hi);
-      }
-    }
-    sweep = { left: radialLeft, right: radialRight };
-  }
-  return { group, cell, rows, columns, minY, maxY, minZ, maxZ, left, right, sweep,
+  return { group, cell, rows, columns, minY, maxY, minZ, maxZ, left, right,
     frame: new THREE.Matrix4(), inverse: new THREE.Matrix4() };
 }
 
@@ -68,6 +44,7 @@ export class SkinSurface {
     this.rootInverse = new THREE.Matrix4();
     this.point = new THREE.Vector3();
     this.probe = new THREE.Vector3();
+    this.offset = new THREE.Vector3();
     this.update();
   }
 
@@ -79,20 +56,10 @@ export class SkinSurface {
     }
   }
 
-  outside(point, side, swept = false) {
+  outside(point, side) {
     let outside = -Infinity;
     for (const p of this.profiles) {
       const local = this.point.copy(point).applyMatrix4(p.inverse);
-      if (p.sweep) {
-        const r = Math.hypot(local.y, local.z) / p.cell, index = Math.floor(r), fraction = r - index;
-        const field = side === 1 ? p.sweep.right : p.sweep.left;
-        const a = field[index], b = field[index + 1];
-        if (Number.isFinite(a) && Number.isFinite(b)) {
-          const x = THREE.MathUtils.lerp(a, b, fraction);
-          const crown = swept ? 0 : THREE.MathUtils.smoothstep(point.y - p.frame.elements[13], 0.2, 0.65);
-          outside = Math.max(outside, side * (p.frame.elements[12] + x * p.frame.elements[0]) - crown * 0.9);
-        }
-      }
       if (local.y < p.minY || local.y > p.maxY || local.z < p.minZ || local.z > p.maxZ) continue;
       const y = (local.y - p.minY) / p.cell, z = (local.z - p.minZ) / p.cell;
       const iy = Math.floor(y), iz = Math.floor(z), fy = y - iy, fz = z - iz;
@@ -127,14 +94,40 @@ export class SkinSurface {
     return correction;
   }
 
-  projectBox(top, half, side) {
-    // The last rope point is the box's top fastening, not its centre.
-    let required = -Infinity;
-    for (const dy of [0, -half.y, -half.y * 2]) for (const dz of [-half.z, 0, half.z]) {
-      this.probe.copy(top); this.probe.y += dy; this.probe.z += dz;
-      required = Math.max(required, this.outside(this.probe, side, true) + half.x + 0.025);
+  boxRoll(top, half, side) {
+    let upper = -Infinity, lower = -Infinity;
+    for (const z of [-half.z, 0, half.z]) {
+      this.probe.copy(top); this.probe.y -= half.y * 0.25; this.probe.z += z;
+      upper = Math.max(upper, this.outside(this.probe, side));
+      this.probe.y -= half.y * 1.5;
+      lower = Math.max(lower, this.outside(this.probe, side));
     }
-    const correction = Math.max(0, required - side * top.x);
+    if (!Number.isFinite(upper) || !Number.isFinite(lower)) return 0;
+    return side * THREE.MathUtils.clamp(Math.atan2(lower - upper, half.y * 1.5), -0.35, 0.75);
+  }
+
+  boxYaw(top, half, side) {
+    let front = -Infinity, rear = -Infinity;
+    for (const y of [half.y * 0.5, half.y, half.y * 1.5]) {
+      this.probe.copy(top); this.probe.y -= y; this.probe.z -= half.z * 0.75;
+      front = Math.max(front, this.outside(this.probe, side));
+      this.probe.z += half.z * 1.5;
+      rear = Math.max(rear, this.outside(this.probe, side));
+    }
+    if (!Number.isFinite(front) || !Number.isFinite(rear)) return 0;
+    return side * THREE.MathUtils.clamp(Math.atan2(rear - front, half.z * 1.5), -0.75, 0.75);
+  }
+
+  projectBox(top, half, side, rotation = null) {
+    // The last rope point is the box's top fastening, not its centre.
+    let correction = 0;
+    for (const face of rotation ? [-1, 1] : [-1])
+      for (const dy of [0, -half.y, -half.y * 2]) for (const dz of [-half.z, 0, half.z]) {
+        this.offset.set(side * face * half.x, dy, dz);
+        if (rotation) this.offset.applyQuaternion(rotation);
+        this.probe.copy(top).add(this.offset);
+        correction = Math.max(correction, this.outside(this.probe, side) + 0.01 - side * this.probe.x);
+      }
     top.x += side * correction;
     return correction;
   }

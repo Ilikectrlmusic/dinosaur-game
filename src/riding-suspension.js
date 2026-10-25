@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 export const RIDER_THIGH_LENGTH = 0.56, RIDER_SHIN_LENGTH = 0.50;
+export const PANNIER_ANCHOR_Z = 0.60;
 const DOWN = new THREE.Vector3(0, -1, 0), STEP = 1 / 120;
 const clamp = THREE.MathUtils.clamp;
 
@@ -26,35 +27,48 @@ function integrate(node, h, gravity, forward) {
 // Small reusable leather ribbons. The solver supplies the centreline; the
 // fastening points stay exact even when the body compresses at touchdown.
 export class SuspensionStrap extends THREE.Mesh {
-  constructor(material, segments = 8) {
+  constructor(material, segments = 8, lanes = 1) {
     const geometry = new THREE.BufferGeometry(), indices = [], uv = [];
-    for (let i = 0; i <= segments; i++) for (let j = 0; j < 4; j++) {
+    for (let lane = 0; lane < lanes; lane++) for (let i = 0; i <= segments; i++) for (let j = 0; j < 4; j++) {
       uv.push(j / 3, i / segments);
       if (i < segments) {
-        const a = i * 4 + j, b = i * 4 + (j + 1) % 4;
+        const base = lane * (segments + 1) * 4;
+        const a = base + i * 4 + j, b = base + i * 4 + (j + 1) % 4;
         indices.push(a, b, a + 4, b, b + 4, a + 4);
       }
     }
-    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array((segments + 1) * 12), 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array((segments + 1) * 12), 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array((segments + 1) * 12 * lanes), 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array((segments + 1) * 12 * lanes), 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); geometry.setIndex(indices);
     super(geometry, material);
     this.frustumCulled = false; this.userData.keepSeparate = true;
     this.direction = new THREE.Vector3(); this.width = new THREE.Vector3(); this.normal = new THREE.Vector3();
+    this.lanes = lanes; this.point = new THREE.Vector3();
+    this.startOffset = new THREE.Vector3(); this.endOffset = new THREE.Vector3(); this.offsetDelta = new THREE.Vector3();
   }
-  update(nodes) {
+  update(nodes, rotation = null, surface = null, side = 1) {
     const position = this.geometry.attributes.position, normal = this.geometry.attributes.normal;
-    for (let i = 0; i < nodes.length; i++) {
-      const p = nodes[i].position;
-      this.direction.subVectors(nodes[Math.min(i + 1, nodes.length - 1)].position, nodes[Math.max(0, i - 1)].position).normalize();
-      this.width.set(0, 0, 1).addScaledVector(this.direction, -this.direction.z).normalize();
-      if (this.width.lengthSq() < 0.1) this.width.set(1, 0, 0);
-      this.normal.crossVectors(this.direction, this.width).normalize();
-      for (let j = 0; j < 4; j++) {
-        const w = j === 0 || j === 3 ? -0.019 : 0.019, n = j < 2 ? -0.003 : 0.003;
-        position.setXYZ(i * 4 + j, p.x + this.width.x * w + this.normal.x * n,
-          p.y + this.width.y * w + this.normal.y * n, p.z + this.width.z * w + this.normal.z * n);
-        normal.setXYZ(i * 4 + j, this.normal.x * Math.sign(n), this.normal.y * Math.sign(n), this.normal.z * Math.sign(n));
+    for (let lane = 0; lane < this.lanes; lane++) {
+      this.startOffset.set(0, 0, this.lanes === 1 ? 0 : lane ? 0.12 : -0.12);
+      this.endOffset.copy(this.startOffset);
+      if (rotation) this.endOffset.applyQuaternion(rotation);
+      this.offsetDelta.subVectors(this.endOffset, this.startOffset);
+      for (let i = 0; i < nodes.length; i++) {
+        const p = this.point.copy(nodes[i].position).add(this.startOffset).addScaledVector(this.offsetDelta, i / (nodes.length - 1));
+        if (surface && i > 0 && i < nodes.length - 1) surface.projectSphere(p, 0.012, side);
+        const next = Math.min(i + 1, nodes.length - 1), previous = Math.max(0, i - 1);
+        this.direction.subVectors(nodes[next].position, nodes[previous].position)
+          .addScaledVector(this.offsetDelta, (next - previous) / (nodes.length - 1)).normalize();
+        this.width.set(0, 0, 1).addScaledVector(this.direction, -this.direction.z).normalize();
+        if (this.width.lengthSq() < 0.1) this.width.set(1, 0, 0);
+        this.normal.crossVectors(this.direction, this.width).normalize();
+        for (let j = 0; j < 4; j++) {
+          const w = j === 0 || j === 3 ? -0.019 : 0.019, n = j < 2 ? -0.003 : 0.003;
+          const vertex = lane * nodes.length * 4 + i * 4 + j;
+          position.setXYZ(vertex, p.x + this.width.x * w + this.normal.x * n,
+            p.y + this.width.y * w + this.normal.y * n, p.z + this.width.z * w + this.normal.z * n);
+          normal.setXYZ(vertex, this.normal.x * Math.sign(n), this.normal.y * Math.sign(n), this.normal.z * Math.sign(n));
+        }
       }
     }
     position.needsUpdate = normal.needsUpdate = true;
@@ -65,13 +79,23 @@ class HangingChain {
   constructor(start, end, length, side, strap, box = null, pinnedEnd = false) {
     this.side = side; this.length = length; this.strap = strap; this.box = box; this.pinnedEnd = pinnedEnd;
     this.nodes = Array.from({ length: 9 }, (_, i) => particle(start.clone().lerp(end, i / 8), i === 0 || (i === 8 && pinnedEnd) ? 0 : i === 8 ? 6 : 1));
+    this.rotation = new THREE.Quaternion(); this.euler = new THREE.Euler();
+  }
+  orient(surface, dt) {
+    if (!this.box) return;
+    const end = this.nodes.at(-1);
+    this.euler.z = THREE.MathUtils.damp(this.euler.z, surface.boxRoll(end.position, this.box, this.side), 10, dt);
+    this.euler.y = THREE.MathUtils.damp(this.euler.y, surface.boxYaw(end.position, this.box, this.side), 10, dt);
+    const pitch = clamp((end.position.z - end.previous.z) / Math.max(dt, STEP) * 0.06, -0.08, 0.08);
+    this.euler.x = THREE.MathUtils.damp(this.euler.x, pitch, 12, dt);
+    this.rotation.setFromEuler(this.euler);
   }
   constrain(surface) {
     for (let i = 0; i < 8; i++) distance(this.nodes[i], this.nodes[i + 1], this.length / 8);
     for (let i = 1; i < this.nodes.length; i++) {
       if (this.pinnedEnd && i === 8) continue;
       const p = this.nodes[i].position;
-      if (i === 8 && this.box) surface.projectBox(p, this.box, this.side);
+      if (i === 8 && this.box) surface.projectBox(p, this.box, this.side, this.rotation);
       else surface.projectSphere(p, 0.024, this.side);
     }
   }
@@ -100,7 +124,7 @@ export class RidingSuspension {
         if (Number.isFinite(profile.right[i])) half = Math.max(half, Math.abs(profile.right[i]), Math.abs(profile.left[i]));
       }
       if (profile.group === dino.body) bodyWidth = half * dino.body.scale.x * scale;
-      if (profile.sweep) thighWidth = Math.max(thighWidth, (Math.abs(profile.group.position.x) + half) * scale);
+      if (profile.group.userData.suspensionSweep) thighWidth = Math.max(thighWidth, (Math.abs(profile.group.position.x) + half) * scale);
     }
     const footWidth = Math.max(bodyWidth + 0.19, thighWidth * 0.9 + 0.06);
     this.legs = this.rider.limbs.map(({ leg, side }, i) => {
@@ -115,10 +139,20 @@ export class RidingSuspension {
       const chain = new HangingChain(start, end, 0.97 / scale, side, this.straps[i], null, true);
       return { side, foot, pole, nodes: [particle(hip, 0), particle(knee, 0), particle(ankle, 0)], chain };
     });
-    if (!this.chains.length) this.chains = this.panniers.map(({ side, strap }) => {
-      const start = this.start(side, 0.65, 0.54);
-      return new HangingChain(start, start.clone().add(new THREE.Vector3(side * 0.48, -0.22, 0)), 0.62, side, strap, new THREE.Vector3(0.145, 0.2, 0.205));
-    });
+    if (!this.chains.length) {
+      this.chains = this.panniers.map(({ side, strap }) => {
+        const start = this.start(side, PANNIER_ANCHOR_Z, 0.54);
+        return new HangingChain(start, start.clone().add(new THREE.Vector3(side * 0.24, -0.45, 0)), 0.62, side, strap, new THREE.Vector3(0.145, 0.2, 0.205));
+      });
+      // Settle the loaded straps before the first render or a mount change.
+      // The construction pose must not leave a wide, weightless-looking gap.
+      const settleStep = 1 / 60;
+      for (let frame = 0; frame < 120; frame++) {
+        this.chains.forEach((chain) => chain.orient(this.surface, settleStep));
+        this.chains.forEach((chain) => chain.nodes.forEach((node) => integrate(node, settleStep, -9.81 / scale, 0)));
+        for (let i = 0; i < 12; i++) this.constrain();
+      }
+    }
     for (let i = 0; i < 100; i++) this.constrain();
     for (const leg of this.legs) leg.nodes.forEach((node) => node.previous.copy(node.position));
     for (const chain of this.chains) chain.nodes.forEach((node) => node.previous.copy(node.position));
@@ -140,14 +174,17 @@ export class RidingSuspension {
       leg.nodes[1].position.copy(leg.nodes[0].position).add(leg.pole);
       leg.nodes[2].position.copy(leg.foot).multiplyScalar(1 / scale).add(this.rider.root.position);
     }
-    this.chains.forEach((chain) => chain.nodes[0].position.copy(this.start(chain.side, 0.65, 0.54)));
+    this.chains.forEach((chain) => chain.nodes[0].position.copy(this.start(chain.side, PANNIER_ANCHOR_Z, 0.54)));
     this.accumulator += step;
     while (this.accumulator >= STEP - 1e-8) {
       this.accumulator -= STEP;
       for (const leg of this.legs) {
         leg.chain.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
       }
-      for (const chain of this.chains) chain.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
+      for (const chain of this.chains) {
+        chain.orient(this.surface, STEP);
+        chain.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
+      }
       for (let i = 0; i < 12; i++) this.constrain();
     }
     // Newly selected luggage still needs a fitted surface contact.
@@ -155,12 +192,12 @@ export class RidingSuspension {
     this.legs.forEach((leg, i) => this.applyLeg(leg, this.rider.limbs[i]));
     this.chains.forEach((chain, i) => {
       const top = chain.nodes.at(-1).position, bag = this.panniers[i].group;
-      // Keep the loaded boxes upright with only a small inertial rock.
-      const velocity = top.z - chain.nodes.at(-1).previous.z;
-      bag.rotation.x = THREE.MathUtils.damp(bag.rotation.x, clamp(velocity * 7, -0.08, 0.08), 12, step);
+      // Lean against the flank with a small inertial rock. The strap's top
+      // fastening stays pinned as the entire box orientation changes.
+      bag.quaternion.copy(chain.rotation);
       this.point.set(0, 0.2, 0).applyQuaternion(bag.quaternion);
       bag.position.copy(top).sub(this.dino.saddle.position).sub(this.point);
-      chain.strap.update(chain.nodes);
+      chain.strap.update(chain.nodes, chain.rotation, this.surface, chain.side);
     });
     this.dino.root.updateMatrixWorld(true);
   }

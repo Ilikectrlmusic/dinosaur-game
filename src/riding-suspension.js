@@ -4,7 +4,7 @@ export const RIDER_THIGH_LENGTH = 0.56, RIDER_SHIN_LENGTH = 0.50;
 export const PANNIER_ANCHOR_Z = 0.25;
 export const PANNIER_ANCHOR_WIDTH = 0.32;
 export const PANNIER_ANCHOR_Y = 0.145;
-export const PANNIER_STRAP_LENGTH = 0.35;
+export const PANNIER_STRAP_LENGTH = 0.38;
 const DOWN = new THREE.Vector3(0, -1, 0), STEP = 1 / 120;
 const clamp = THREE.MathUtils.clamp;
 
@@ -83,6 +83,7 @@ class HangingChain {
     this.side = side; this.length = length; this.strap = strap; this.box = box; this.pinnedEnd = pinnedEnd;
     this.nodes = Array.from({ length: 9 }, (_, i) => particle(start.clone().lerp(end, i / 8), i === 0 || (i === 8 && pinnedEnd) ? 0 : i === 8 ? 6 : 1));
     this.rotation = new THREE.Quaternion(); this.euler = new THREE.Euler();
+    this.contactPoint = new THREE.Vector3(); this.contactNormal = new THREE.Vector3(); this.contactVelocity = new THREE.Vector3();
   }
   orient(surface, dt) {
     if (!this.box) return;
@@ -100,7 +101,19 @@ class HangingChain {
     for (let i = 1; i < this.nodes.length; i++) {
       if (this.pinnedEnd && i === 8) continue;
       const p = this.nodes[i].position;
-      if (i === 8 && this.box) surface.projectBox(p, this.box, this.side, this.rotation, this.nodes[0].position, this.length);
+      if (i === 8 && this.box) {
+        this.contactPoint.copy(p);
+        surface.projectBox(p, this.box, this.side, this.rotation, this.nodes[0].position, this.length);
+        this.contactNormal.subVectors(p, this.contactPoint);
+        if (this.contactNormal.lengthSq() > 1e-12) {
+          // Skin and strap contacts absorb impact instead of turning each
+          // positional correction into another tiny outward bounce.
+          this.contactNormal.normalize();
+          this.contactVelocity.subVectors(this.contactPoint, this.nodes[i].previous);
+          this.contactVelocity.addScaledVector(this.contactNormal, -Math.min(0, this.contactVelocity.dot(this.contactNormal)));
+          this.nodes[i].previous.copy(p).addScaledVector(this.contactVelocity, -0.96);
+        }
+      }
       else surface.projectSphere(p, 0.024, this.side);
     }
   }
@@ -116,6 +129,7 @@ export class RidingSuspension {
     this.knee = new THREE.Vector3(); this.pole = new THREE.Vector3(); this.rotation = new THREE.Quaternion();
     this.inverse = new THREE.Quaternion(); this.bootRotation = new THREE.Quaternion();
     this.euler = new THREE.Euler(); this.rider = null; this.chains = [];
+    this.resting = false;
   }
   resetRider() {
     const dino = this.dino, scale = dino.sizeScale;
@@ -166,12 +180,12 @@ export class RidingSuspension {
   pannierStart(side) { return new THREE.Vector3(side * PANNIER_ANCHOR_WIDTH * this.dino.body.scale.x, this.dino.saddle.position.y + PANNIER_ANCHOR_Y, PANNIER_ANCHOR_Z); }
 
   constrain() {
-    for (const chain of this.chains) chain.constrain(this.surface);
+    if (!this.resting) for (const chain of this.chains) chain.constrain(this.surface);
     // Stirrup straps need the same fixed-step constraints as their integration.
     // Solving them only once per rendered frame makes slow camp frames unstable.
     for (const leg of this.legs) leg.chain.constrain(this.surface);
   }
-  update(dt, verticalVelocity = 0, speed = 14) {
+  update(dt, verticalVelocity = 0, speed = 14, resting = false) {
     if (this.rider !== this.dino.rider) this.resetRider();
     const scale = this.dino.sizeScale, step = Math.min(Math.max(dt, 0), 0.05);
     const gravity = (-9.81 - clamp(step ? (verticalVelocity - this.previousVelocity) / step : 0, -8, 18)) / scale;
@@ -182,14 +196,30 @@ export class RidingSuspension {
       leg.nodes[1].position.copy(leg.nodes[0].position).add(leg.pole);
       leg.nodes[2].position.copy(leg.foot).multiplyScalar(1 / scale).add(this.rider.root.position);
     }
-    this.chains.forEach((chain) => chain.nodes[0].position.copy(this.pannierStart(chain.side)));
+    this.chains.forEach((chain) => {
+      const anchor = this.pannierStart(chain.side);
+      if (resting) {
+        // A loaded bag rests against the skin with static friction. Carry its
+        // settled pose with the breathing saddle instead of re-solving a
+        // near-tangent contact every frame and making it chatter.
+        this.point.subVectors(anchor, chain.nodes[0].position);
+        for (const node of chain.nodes) {
+          node.position.add(this.point);
+          node.previous.copy(node.position);
+        }
+      } else if (this.resting) {
+        for (const node of chain.nodes) node.previous.copy(node.position);
+      }
+      chain.nodes[0].position.copy(anchor);
+    });
+    this.resting = resting;
     this.accumulator += step;
     while (this.accumulator >= STEP - 1e-8) {
       this.accumulator -= STEP;
       for (const leg of this.legs) {
         leg.chain.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
       }
-      for (const chain of this.chains) {
+      if (!resting) for (const chain of this.chains) {
         chain.orient(this.surface, STEP);
         chain.nodes.forEach((node) => integrate(node, STEP, gravity, forward));
       }

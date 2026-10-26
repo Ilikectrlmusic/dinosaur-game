@@ -1067,10 +1067,10 @@ select {
   100% { transform: scale(1); text-shadow: 0 0 0 #f6bd7800; }
 }
 @media (min-width: 701px) {
-  .death-overlay .death-modal { width: 570px; padding: 52px; }
+  .death-overlay .death-modal { width: 510px; padding: 60px 44px; }
 }
 @media (min-width: 701px) and (max-height: 740px) {
-  .death-overlay .death-modal { padding: 38px; }
+  .death-overlay .death-modal { padding: 44px 36px; }
   .death-modal h2 { font-size: 28px; line-height: 1.2; margin: 10px 0; }
   .death-modal #death-reason { font-size: 11px; line-height: 1.7; margin: 10px 0; }
   .death-modal .death-stats { margin: 18px 0 16px; padding: 14px 0; }

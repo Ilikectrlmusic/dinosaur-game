@@ -887,7 +887,7 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
   });
   dino.root.updateMatrixWorld(true);
   dino.skinSurface.update();
-  dino.suspension.update(dt, verticalVelocity, speed);
+  dino.suspension.update(dt, verticalVelocity, speed, !run);
   dino.reins.forEach((rein, i) => {
     dino.root.worldToLocal(rider.limbs[i].hand.getWorldPosition(dino.reinStart));
     dino.root.worldToLocal(dino.reinAnchors[i].getWorldPosition(dino.reinEnd));

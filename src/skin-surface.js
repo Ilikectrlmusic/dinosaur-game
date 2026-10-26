@@ -142,10 +142,12 @@ export class SkinSurface {
   projectBox(top, half, side, rotation = null, anchor = null, length = 0) {
     const correction = this.boxClearance(top, half, side, rotation);
     top.x += side * correction;
-    if (!anchor || top.distanceTo(anchor) <= length * 1.005) return correction;
+    if (!anchor || top.distanceTo(anchor) <= length + 0.00001) return correction;
     // A short strap cannot stretch sideways when a thigh rises underneath.
     // Let the bag ride up the flank instead, retaining the available reach.
-    const radius = length * 0.98, dz = top.z - anchor.z;
+    // Project to the actual reach continuously. Jumping between an overstretch
+    // threshold and a shorter radius made resting bags repeatedly snap back.
+    const radius = length, dz = top.z - anchor.z;
     const reach = Math.sqrt(Math.max(0.0001, radius * radius - dz * dz));
     const candidate = this.hangingPoint;
     const start = THREE.MathUtils.clamp(Math.atan2(top.y - anchor.y, side * (top.x - anchor.x)), -Math.PI / 2, Math.PI / 2);

@@ -104,8 +104,8 @@ test("rider legs keep a fitted seated pose while panniers hang outside the skin 
     expect(result.penetration, JSON.stringify({ mount: result.mount, ...result.worst })).toBeLessThan(0.005);
     expect(result.maxAbduction, JSON.stringify(result)).toBeLessThan(1.0);
     expect(result.maxFootSpread, JSON.stringify(result)).toBeLessThan(1.55);
-    expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.38);
-    expect(result.maxRenderedStrap, JSON.stringify(result)).toBeLessThan(0.40);
+    expect(result.maxBagStrap, JSON.stringify(result)).toBeLessThan(0.41);
+    expect(result.maxRenderedStrap, JSON.stringify(result)).toBeLessThan(0.43);
     expect(result.maxSpeed, JSON.stringify(result)).toBeLessThan(8);
     if (result.fps === 60) expect(result.samples).toBeGreaterThan(500);
   }
@@ -198,5 +198,59 @@ test("all panniers rest against actual flanks from the first camp frame, includi
   for (const result of results) {
     expect(result.largestGap, JSON.stringify(result)).toBeLessThan(0.065);
     expect(result.samples).toBe(108);
+  }
+});
+
+test("resting panniers stay steady with breathing and resume swinging when the mount runs", async ({ page }) => {
+  test.setTimeout(120000);
+  await page.route("**/?rest-test", (route) => route.fulfill({ contentType: "text/html", body: "<html><body></body></html>" }));
+  await page.goto("/?rest-test");
+  const results = await page.evaluate(async () => {
+    const source = await (await fetch("/src/main.js")).text();
+    const { Vector3, Raycaster } = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
+    const { buildDinosaur, animateDinosaur } = await import("/src/creatures.js");
+    const { MOUNTS } = await import("/src/mounts.js");
+    const point = new Vector3(), origin = new Vector3(), direction = new Vector3(), ray = new Raycaster(), results = [];
+    for (const mount of MOUNTS) for (const fps of [30, 60, 120]) {
+      const dino = buildDinosaur(1, mount.id), dt = 1 / fps;
+      const skin = dino.skinSurface.profiles.flatMap(({ group }) => group.children.filter((o) => o.isMesh));
+      const previous = dino.panniers.map(({ group }) => group.position.clone());
+      let maxStep = 0, penetration = 0, pinError = 0, minY = Infinity, maxY = -Infinity;
+      for (let frame = 0; frame < fps * 8; frame++) {
+        animateDinosaur(dino, frame * dt, 0, 0, 0, dt);
+        for (const [i, { group, side }] of dino.panniers.entries()) {
+          maxStep = Math.max(maxStep, group.position.distanceTo(previous[i])); previous[i].copy(group.position);
+          group.getWorldPosition(point); minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+          group.localToWorld(point.set(0, 0.2, 0)); dino.root.worldToLocal(point);
+          pinError = Math.max(pinError, point.distanceTo(dino.suspension.chains[i].nodes.at(-1).position));
+          if (frame % fps !== Math.floor(fps / 4)) continue;
+          for (const y of [-0.12, 0, 0.12]) for (const z of [-0.12, 0, 0.12]) {
+            group.localToWorld(point.set(-side * 0.13, y, z));
+            ray.set(origin.set(side * 3, point.y, point.z), direction.set(-side, 0, 0));
+            const hit = ray.intersectObjects(skin, false)[0];
+            if (hit) penetration = Math.max(penetration, side * (hit.point.x - point.x));
+          }
+        }
+      }
+      // Starting a round rebuilds the mount, just as startGame/resetDino do.
+      const runner = buildDinosaur(1, mount.id);
+      const start = runner.panniers.map(({ group }) => group.position.clone());
+      let movingRange = 0;
+      for (let frame = 0; frame < fps; frame++) {
+        animateDinosaur(runner, 8 + frame * dt, 1, 0, 0, dt);
+        runner.panniers.forEach(({ group }, i) => {
+          movingRange = Math.max(movingRange, group.position.distanceTo(start[i]));
+        });
+      }
+      results.push({ mount: mount.id, fps, maxStep, penetration, pinError, breathing: maxY - minY, movingRange });
+    }
+    return results;
+  });
+  for (const result of results) {
+    expect(result.maxStep, JSON.stringify(result)).toBeLessThan(0.0005);
+    expect(result.penetration, JSON.stringify(result)).toBeLessThan(0.005);
+    expect(result.pinError, JSON.stringify(result)).toBeLessThan(1e-8);
+    expect(result.breathing, JSON.stringify(result)).toBeGreaterThan(0.02);
+    expect(result.movingRange, JSON.stringify(result)).toBeGreaterThan(0.005);
   }
 });

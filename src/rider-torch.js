@@ -64,7 +64,7 @@ export class RiderTorch {
     });
     this.flame = new THREE.Group(); this.flame.position.y = 0.6; this.root.add(this.flame);
     for (const angle of [0, Math.PI / 2]) {
-      const geometry = new THREE.PlaneGeometry(0.54, 0.6, 1, 10).rotateY(angle);
+      const geometry = new THREE.PlaneGeometry(0.68, 0.6, 1, 10).rotateY(angle);
       const flame = new THREE.Mesh(geometry, this.flameMaterial);
       flame.position.y = 0.3; flame.frustumCulled = false; this.flame.add(flame);
     }
@@ -154,7 +154,7 @@ export class RiderTorch {
     this.localFlow.set(gust * 0.15 * movement, 1 - THREE.MathUtils.clamp(air * 0.04, -0.3, 0.3),
       0.035 + Math.min(Math.max(speed, 0) / 30, 1.2) * 1.25 + gust * 0.1 * movement);
     this.airflow.lerp(this.localFlow, 1 - Math.exp(-step * 8));
-    const stretch = THREE.MathUtils.clamp(1 - movement * (air * 0.035 + acceleration * 0.003), 0.76, 1.25);
+    const stretch = THREE.MathUtils.clamp(1 - movement * (air * 0.035 + acceleration * 0.003), 0.76, 1.25 - duck * 0.15);
     this.flameMaterial.uniforms.stretch.value = THREE.MathUtils.damp(this.flameMaterial.uniforms.stretch.value, stretch, 10, step);
     this.root.position.copy(this.handPosition);
     const viewModel = firstPerson && !this.crashed;
@@ -163,7 +163,7 @@ export class RiderTorch {
     else if (firstPerson && camera) {
       const depth = 1.35, halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * depth;
       const halfWidth = halfHeight * camera.aspect;
-      this.root.position.set(Math.min(0.5, halfWidth * 0.4), -halfHeight + 0.058 - duck * 0.18, -depth).applyQuaternion(camera.quaternion).add(camera.position);
+      this.root.position.set(Math.min(0.5, halfWidth * 0.37), -halfHeight + 0.058 - duck * 0.1, -depth).applyQuaternion(camera.quaternion).add(camera.position);
       this.root.quaternion.copy(camera.quaternion).multiply(this.crashRotation.setFromEuler(this.euler.set(-0.04, 0, -0.1)));
     } else this.root.quaternion.setFromEuler(this.euler.set(-0.07, 0, -0.12 - duck * 0.25 + Math.sin(time * 1.7) * 0.015));
     this.previousHandRotation.copy(this.handRotation);

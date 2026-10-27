@@ -7,7 +7,7 @@ async function openGame(page) {
       "renderer.render(world.scene, camera);",
       "if (!window.__skipGraphics) renderer.render(world.scene, camera);",
     ).replace("// A small read-only diagnostic surface",
-      "window.__renderReview = { renderer, world, torch, get dino(){return dino;} }; // A small read-only diagnostic surface") });
+      "window.__renderReview = { renderer, world, torch, camera, get dino(){return dino;} }; // A small read-only diagnostic surface") });
   });
   await page.addInitScript(() => {
     if (!localStorage.getItem("saurian-preferences"))
@@ -133,11 +133,11 @@ test.describe("adaptive rendering", () => {
   });
 });
 
-test("daylight shadows stay within their update budget and night fire never adds a shadow pass", async ({ page }) => {
+test("stationary shadows keep their budget, scrolling props cast their current positions and night fire adds no shadow pass", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("saurian-preferences", JSON.stringify({ quality: "high", motion: false, sound: false })));
   await openGame(page);
   const result = await page.evaluate(() => {
-    const { world, torch, dino } = window.__renderReview, shadow = world.sun.shadow, updates = [];
+    const { world, torch, dino, renderer, camera } = window.__renderReview, shadow = world.sun.shadow, updates = [];
     world.setRenderScale(1);
     for (const fps of [30, 60, 120]) {
       world.shadowElapsed = 0; shadow.needsUpdate = false;
@@ -149,6 +149,24 @@ test("daylight shadows stay within their update budget and night fire never adds
       }
       updates.push(count);
     }
+    // Follow real shadow submissions rather than just the scheduler's flag:
+    // cached maps must never describe an earlier cactus/rock position in a run.
+    const plant = world.plants[0], rock = world.rocks.children[0], casters = [rock];
+    plant.position.set(3, world.groundHeightAt(3, -4), -4);
+    plant.traverse((object) => { if (object.isMesh && object.castShadow) casters.push(object); });
+    const matrix = rock.matrix.clone().makeTranslation(-3, 0, -4);
+    rock.setMatrixAt(0, matrix); rock.instanceMatrix.needsUpdate = true; rock.computeBoundingSphere();
+    const submitted = new Map(), alignment = [];
+    for (const caster of casters) caster.onBeforeShadow = () => submitted.set(caster, caster.matrixWorld.elements[14]);
+    for (let frame = 0; frame < 6; frame++) {
+      world.update(1 / 60, 21.6 + frame / 60, 30);
+      renderer.render(world.scene, camera);
+      for (const caster of casters) alignment.push(Math.abs((submitted.get(caster) ?? Infinity) - caster.matrixWorld.elements[14]));
+    }
+    const movingSize = shadow.mapSize.x;
+    world.setRenderScale(1);
+    const retainedMovingSize = shadow.mapSize.x;
+    world.update(1 / 60, 22, 0);
     let nightUpdates = 0;
     for (let i = 0; i < 120; i++) {
       world.update(1 / 60, 111.6 + i / 60);
@@ -158,10 +176,12 @@ test("daylight shadows stay within their update budget and night fire never adds
     torch.update(1 / 60, dino.rider.limbs[1].hand, 1, 111.6);
     const nightLit = torch.light.visible && torch.groundLight.visible && torch.groundLight.intensity > 400;
     torch.reset(); torch.update(1 / 60, dino.rider.limbs[1].hand, 0, 201.6);
-    return { updates, nightUpdates, nightLit, automatic: shadow.autoUpdate, size: shadow.mapSize.x,
+    return { updates, alignment, movingSize, retainedMovingSize, nightUpdates, nightLit, automatic: shadow.autoUpdate, size: shadow.mapSize.x,
       torchShadow: torch.groundLight.castShadow, daytimeLights: torch.light.visible || torch.groundLight.visible };
   });
   for (const count of result.updates) expect(count).toBeGreaterThanOrEqual(47);
   for (const count of result.updates) expect(count).toBeLessThanOrEqual(48);
+  for (const error of result.alignment) expect(error).toBeLessThan(1e-8);
+  expect(result.movingSize).toBe(512); expect(result.retainedMovingSize).toBe(512);
   expect(result).toMatchObject({ nightUpdates: 0, nightLit: true, automatic: false, size: 1024, torchShadow: false, daytimeLights: false });
 });

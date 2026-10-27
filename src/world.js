@@ -137,7 +137,8 @@ export class DesertWorld {
     this.setRenderScale(1);
   }
   setRenderScale(scale) {
-    const shadowSize = scale < 0.85 ? 512 : 1024;
+    this.renderScale = scale;
+    const shadowSize = this.sceneryMoving || scale < 0.85 ? 512 : 1024;
     this.shadowInterval = scale < 0.85 ? 1 / 15 : 1 / 24;
     if (this.sun.shadow.mapSize.x !== shadowSize) {
       this.sun.shadow.mapSize.set(shadowSize, shadowSize);
@@ -267,8 +268,16 @@ export class DesertWorld {
   }
   update(dt, time, speed = 0, mountHeight = 0) {
     this.dayNight.update(time);
+    const moving = Math.abs(speed) > 0.001;
+    if (moving !== this.sceneryMoving) {
+      this.sceneryMoving = moving;
+      this.setRenderScale(this.renderScale ?? 1);
+    }
     this.shadowElapsed += dt;
-    if (this.sun.castShadow && this.dayNight.solarIntensity > 0.001 && this.shadowElapsed >= this.shadowInterval) {
+    // Scrolling scenery must use the shadow of its current position. Reusing
+    // an older map made rock/cactus self-shadows alternate between lit/dark.
+    // Use the smaller map while moving to offset the higher refresh frequency.
+    if (this.sun.castShadow && this.dayNight.solarIntensity > 0.001 && (moving || this.shadowElapsed >= this.shadowInterval)) {
       this.sun.shadow.needsUpdate = true;
       this.shadowElapsed %= this.shadowInterval;
     }

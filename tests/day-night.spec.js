@@ -14,7 +14,7 @@ test("every rider holds the night torch, gathers the reins and keeps the fire at
       const dino = buildDinosaur(rider, mount), scene = new T.Scene(), torch = new RiderTorch(scene);
       scene.add(dino.root); dino.torchAmount = 1;
       if (rider > 0) dino.torchPose = 1;
-      let pinError = 0, reinError = 0, maxStretch = 0, raised = Infinity, ropeBound = 0, crouchedFireTop = 0;
+      let pinError = 0, reinError = 0, maxStretch = 0, raised = Infinity, ropeBound = 0, crouchedFireTop = 0, crouchedLightHeight = Infinity;
       for (let frame = 0; frame < 240; frame++) {
         const time = frame / 60;
         const duck = time > 2 ? Math.sin((time - 2) / 2 * Math.PI) ** 2 : 0;
@@ -36,7 +36,16 @@ test("every rider holds the night torch, gathers the reins and keeps the fire at
           }
         }
       }
-      results.push({ mount, rider, pinError, reinError, maxStretch, raised, ropeBound, crouchedFireTop, lit: torch.light.intensity, particles: torch.alive });
+      for (const speed of [10, 36]) for (let frame = 0; frame < 90; frame++) {
+        const time = 5 + frame / 60;
+        animateDinosaur(dino, time, 1, 1, 0, 1 / 60);
+        torch.update(1 / 60, dino.rider.limbs[1].hand, 1, time, { speed, duck: 1 });
+        dino.rider.head.getWorldPosition(head);
+        crouchedFireTop = Math.max(crouchedFireTop,
+          torch.flame.localToWorld(new T.Vector3(0, 0.6 * torch.flameMaterial.uniforms.stretch.value + 0.16, 0)).y);
+        crouchedLightHeight = Math.min(crouchedLightHeight, torch.origin.y - head.y);
+      }
+      results.push({ mount, rider, pinError, reinError, maxStretch, raised, ropeBound, crouchedFireTop, crouchedLightHeight, lit: torch.light.intensity, particles: torch.alive });
     }
     return results;
   });
@@ -46,6 +55,7 @@ test("every rider holds the night torch, gathers the reins and keeps the fire at
     expect(result.maxStretch, JSON.stringify(result)).toBeLessThan(1.4);
     expect(result.raised, JSON.stringify(result)).toBeGreaterThan(0.25);
     expect(result.crouchedFireTop, JSON.stringify(result)).toBeLessThan(3.2);
+    expect(result.crouchedLightHeight, JSON.stringify(result)).toBeGreaterThan(0.1);
     expect(result.ropeBound, JSON.stringify(result)).toBeLessThan(5);
     expect(result.lit).toBeGreaterThan(0);
     expect(result.particles).toBeLessThanOrEqual(24);

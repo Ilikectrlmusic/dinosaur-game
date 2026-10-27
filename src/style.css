@@ -1067,7 +1067,7 @@ select {
   100% { transform: scale(1); text-shadow: 0 0 0 #f6bd7800; }
 }
 @media (min-width: 701px) {
-  .death-overlay .death-modal { width: 510px; padding: 60px 44px; }
+  .death-overlay .death-modal { width: 460px; padding: 60px 44px; }
 }
 @media (min-width: 701px) and (max-height: 740px) {
   .death-overlay .death-modal { padding: 44px 36px; }

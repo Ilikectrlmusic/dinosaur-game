@@ -39,9 +39,12 @@ export class RiderTorch {
     }
     this.flameMaterial = new THREE.ShaderMaterial({
       side: THREE.DoubleSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      uniforms: { time: { value: 0 }, strength: { value: 0 }, wind: { value: 0 } },
-      vertexShader: `varying vec2 vUv;uniform float time,wind;
-        void main(){vUv=uv;vec3 p=position;p.z+=wind*uv.y*uv.y;p.x+=sin(time*5.+uv.y*4.)*.009*uv.y;
+      uniforms: { time: { value: 0 }, strength: { value: 0 }, wind: { value: new THREE.Vector2() }, stretch: { value: 1 } },
+      vertexShader: `varying vec2 vUv;uniform float time,stretch;uniform vec2 wind;
+        void main(){vUv=uv;vec3 p=position;float tip=pow(uv.y,1.7);
+          p.y+=uv.y*.52*(stretch-1.);
+          p.x+=wind.x*tip+(sin(time*6.+uv.y*5.)*.016+sin(time*11.-uv.y*8.)*.009)*tip;
+          p.z+=wind.y*tip+cos(time*7.3-uv.y*6.)*.012*tip;
           gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);}`,
       fragmentShader: `varying vec2 vUv;uniform float time,strength;
         float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
@@ -50,7 +53,7 @@ export class RiderTorch {
         void main(){float y=vUv.y,x=(vUv.x-.5)*2.;vec2 flow=vec2(x*3.,y*4.-time*3.4);
           float n=noise(flow)*.55+noise(flow*2.1+3.)*.3+noise(flow*4.3+9.)*.15;
           x+=(n-.5)*.5*y+sin(y*10.-time*8.)*.045*y;
-          float width=pow(max(0.,1.-y),.7)*.68;float edge=abs(x)/max(.03,width);
+          float width=pow(max(0.,1.-y),.7)*(.74+sin(time*8.1-y*6.)*.045);float edge=abs(x)/max(.03,width);
           float shape=(1.-smoothstep(.55,1.,edge))*(1.-smoothstep(.78+n*.17,1.,y));
           shape*=smoothstep(0.,.08,y);float core=(1.-smoothstep(.05,.55,edge))*(1.-smoothstep(.1,.8,y));
           vec3 color=mix(vec3(1.5,.14,.005),vec3(3.,1.5,.35),core);color=mix(color,vec3(3.3,2.7,1.3),core*core*.55);
@@ -60,21 +63,23 @@ export class RiderTorch {
         }`,
     });
     for (const angle of [0, Math.PI / 2]) {
-      const geometry = new THREE.PlaneGeometry(0.25, 0.43, 1, 6).rotateY(angle);
+      const geometry = new THREE.PlaneGeometry(0.4, 0.52, 1, 10).rotateY(angle);
       const flame = new THREE.Mesh(geometry, this.flameMaterial);
-      flame.position.y = 0.8; flame.frustumCulled = false; this.root.add(flame);
+      flame.position.y = 0.86; flame.frustumCulled = false; this.root.add(flame);
     }
     this.glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: haloTexture(), color: "#ffb454", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0,
     }));
-    this.glow.position.y = FLAME_HEIGHT; this.glow.scale.setScalar(0.64); this.root.add(this.glow);
+    this.glow.position.y = FLAME_HEIGHT; this.glow.scale.setScalar(0.78); this.root.add(this.glow);
     // These lights remain registered during daylight, at zero intensity. Night
     // must not trigger a landscape-wide shader compilation while the game runs.
-    this.light = new THREE.PointLight("#ffad57", 0, 15, 2);
-    this.groundLight = new THREE.SpotLight("#ffc07a", 0, 20, Math.PI * 0.31, 0.8, 2);
+    this.light = new THREE.PointLight("#ffb66b", 0, 23, 2);
+    // A broad forward pool complements the near flame: light the upcoming
+    // obstacles rather than aiming most of the torch light beneath the saddle.
+    this.groundLight = new THREE.SpotLight("#ffd298", 0, 44, Math.PI * 0.22, 0.85, 2);
     this.groundLight.castShadow = true;
     this.groundLight.shadow.mapSize.set(512, 512);
-    this.groundLight.shadow.camera.near = 0.1; this.groundLight.shadow.camera.far = 22;
+    this.groundLight.shadow.camera.near = 0.1; this.groundLight.shadow.camera.far = 46;
     this.groundLight.shadow.bias = -0.0003; this.groundLight.shadow.normalBias = 0.025;
     scene.add(this.light, this.groundLight, this.groundLight.target);
     this.positions = new Float32Array(CAPACITY * 3); this.sizes = new Float32Array(CAPACITY); this.alphas = new Float32Array(CAPACITY);
@@ -95,6 +100,7 @@ export class RiderTorch {
     });
     this.sparks = new THREE.Points(geometry, material); this.sparks.frustumCulled = false; scene.add(this.sparks);
     this.origin = new THREE.Vector3(); this.handPosition = new THREE.Vector3(); this.direction = new THREE.Vector3();
+    this.lastHandPosition = new THREE.Vector3();
     this.handRotation = new THREE.Quaternion(); this.previousHandRotation = new THREE.Quaternion(); this.crashRotation = new THREE.Quaternion();
     this.euler = new THREE.Euler(); this.seed = 0x7f4a921;
     this.reset();
@@ -104,6 +110,8 @@ export class RiderTorch {
 
   reset() {
     this.strength = 0; this.alive = 0; this.emission = 0; this.crashed = false;
+    this.airflowInitialized = false; this.verticalAirSpeed = 0;
+    this.flameMaterial.uniforms.wind.value.set(0, 0); this.flameMaterial.uniforms.stretch.value = 1;
     this.root.visible = false; this.sparks.visible = false; this.light.intensity = this.groundLight.intensity = 0;
     this.particles.forEach((p) => { p.age = Infinity; }); this.alphas.fill(0); this.sizes.fill(0);
   }
@@ -116,6 +124,23 @@ export class RiderTorch {
   update(dt, hand, amount, time, { camera = null, firstPerson = false, speed = 0, motion = true, groundHeight = 0 } = {}) {
     const step = Math.min(0.05, Math.max(0, dt));
     hand.getWorldPosition(this.handPosition); hand.getWorldQuaternion(this.handRotation);
+    // The base stays on the wick; only the flame bends. Smooth measured hand
+    // motion so footfalls, takeoff and landing disturb the fire without snaps.
+    let acceleration = 0;
+    if (this.airflowInitialized && step > 0 && this.handPosition.distanceToSquared(this.lastHandPosition) < 1) {
+      const velocity = THREE.MathUtils.clamp((this.handPosition.y - this.lastHandPosition.y) / step, -8, 8);
+      const previous = this.verticalAirSpeed;
+      this.verticalAirSpeed = THREE.MathUtils.damp(previous, velocity, 12, step);
+      acceleration = THREE.MathUtils.clamp((this.verticalAirSpeed - previous) / step, -30, 30);
+    } else this.verticalAirSpeed = 0;
+    this.lastHandPosition.copy(this.handPosition); this.airflowInitialized = true;
+    const movement = motion ? 1 : 0.35, air = this.verticalAirSpeed;
+    const gust = Math.sin(time * 1.9) * 0.6 + Math.sin(time * 3.7 + 2) * 0.4;
+    const wind = this.flameMaterial.uniforms.wind.value;
+    wind.x = THREE.MathUtils.damp(wind.x, movement * (gust * 0.065 + air * Math.sin(time * 2.3) * 0.012), 9, step);
+    wind.y = THREE.MathUtils.damp(wind.y, movement * (0.035 + Math.min(speed / 30, 1) * 0.23 + gust * 0.035 + Math.abs(acceleration) * 0.002), 9, step);
+    const stretch = THREE.MathUtils.clamp(1 - movement * (air * 0.035 + acceleration * 0.003), 0.76, 1.25);
+    this.flameMaterial.uniforms.stretch.value = THREE.MathUtils.damp(this.flameMaterial.uniforms.stretch.value, stretch, 10, step);
     this.root.position.copy(this.handPosition);
     const viewModel = firstPerson && !this.crashed;
     this.root.scale.setScalar(viewModel ? 0.65 : 1);
@@ -136,14 +161,13 @@ export class RiderTorch {
     this.coals.emissiveIntensity = strength * 0.65;
     this.flameMaterial.uniforms.time.value = time;
     this.flameMaterial.uniforms.strength.value = strength;
-    this.flameMaterial.uniforms.wind.value = Math.min(speed / 30, 1) * 0.12;
     this.glow.material.opacity = strength * 0.2;
     const flicker = 1 + (Math.sin(time * 13.7) * 0.055 + Math.sin(time * 23.1 + 2) * 0.025) * (motion ? 1 : 0.4);
-    this.light.position.copy(this.origin); this.light.intensity = strength * flicker * (viewModel ? 18 : 45);
-    this.groundLight.position.copy(this.origin); this.groundLight.intensity = strength * flicker * (viewModel ? 55 : 75);
+    this.light.position.copy(this.origin); this.light.intensity = strength * flicker * (viewModel ? 24 : 68);
+    this.groundLight.position.copy(this.origin); this.groundLight.intensity = strength * flicker * (viewModel ? 360 : 440);
     this.direction.set(0, 0, -1);
     if (firstPerson && camera) this.direction.applyQuaternion(camera.quaternion);
-    this.direction.y = 0; this.direction.normalize().multiplyScalar(0.5); this.direction.y = -0.85;
+    this.direction.y = 0; this.direction.normalize(); this.direction.y = -0.24;
     this.groundLight.target.position.copy(this.origin).addScaledVector(this.direction, 10);
     this.groundLight.target.updateMatrixWorld(true);
     if (camera) this.sparks.material.uniforms.pointScale.value = (camera.userData.viewportHeight || 720) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * (firstPerson ? 0.6 : 1);

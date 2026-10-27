@@ -28,6 +28,8 @@ test("the held torch lights its surroundings, reuses bounded ember buffers and e
     for (let i = 0; i < 120; i++) torch.update(1 / 60, hand, 0, 2 + i / 60);
     assert.equal(torch.root.visible, false); assert.equal(torch.sparks.visible, false);
     assert.equal(torch.light.intensity, 0); assert.equal(torch.groundLight.intensity, 0);
+    assert.equal(torch.light.visible, false); assert.equal(torch.groundLight.visible, false);
+    assert.equal(torch.groundLight.castShadow, false, "firelight must never render an extra shadow pass");
     assert.equal(scene.children.includes(torch.light), true, "daylight must keep the light count stable");
     torch.reset(); assert.equal(torch.alive, 0);
   } finally { Math.random = original; }
@@ -47,12 +49,29 @@ test("the flame trails in the wind, compresses on ascent and stretches on descen
     return stretch.value;
   };
   advance(0);
-  assert.ok(wind.value.y > 0.1, "running airflow bends the flame behind the moving torch");
+  const fireDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(torch.flame.quaternion).applyQuaternion(torch.root.quaternion);
+  assert.ok(fireDirection.z > 0.55, "running airflow tilts the whole flame backwards from its base");
   assert.ok(advance(3) < 0.95, "rising air speed compresses the flame");
   assert.ok(advance(-3) > 1.05, "falling lets the flame trail upwards");
   assert.ok(Math.abs(advance(0, 120) - 1) < 0.01, "the flame settles smoothly after landing");
   torch.reset(); hand.position.y += 10; torch.update(1 / 60, hand, 1, time);
   assert.equal(stretch.value, 1, "respawning must not produce an artificial gust");
+});
+
+test("fast airflow leans the entire fire behind the mount even when the camera looks backwards", () => {
+  const scene = new THREE.Scene(), hand = new THREE.Object3D(); scene.add(hand); hand.position.y = 4;
+  const camera = new THREE.PerspectiveCamera(53, 1, 0.08, 800); camera.position.y = 4;
+  camera.rotation.y = Math.PI; camera.updateMatrixWorld(true);
+  const torch = new RiderTorch(scene), direction = new THREE.Vector3(), pivot = new THREE.Vector3();
+  const z = [];
+  for (const speed of [0, 14, 36]) {
+    for (let i = 0; i < 120; i++) torch.update(1 / 60, hand, 1, i / 60, { speed, camera, firstPerson: true });
+    direction.set(0, 1, 0).applyQuaternion(torch.flame.getWorldQuaternion(new THREE.Quaternion()));
+    z.push(direction.z);
+    torch.flame.getWorldPosition(pivot);
+    assert.ok(pivot.distanceTo(torch.root.localToWorld(new THREE.Vector3(0, 0.6, 0))) < 1e-10, "the base stays on the wick while the plume leans");
+  }
+  assert.ok(z[0] < 0.15 && z[1] > 0.4 && z[2] > 0.8, `speed must increase the visible backward lean: ${z}`);
 });
 
 test("first-person torch stays beside the view and remains lit when the rider is hidden", () => {

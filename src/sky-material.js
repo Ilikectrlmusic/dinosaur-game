@@ -1,5 +1,22 @@
 import * as THREE from "three";
 
+function starTexture() {
+  const width = 1024, height = 512, pixels = new Uint8Array(width * height * 4);
+  let seed = 0x4a39b7;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let i = 0; i < 900; i++) {
+    const x = Math.floor(random() * width), y = Math.floor((Math.asin(random() * 2 - 1) / Math.PI + 0.5) * (height - 1));
+    const warmth = random(), brightness = 0.55 + random() * 0.45;
+    const p = (y * width + x) * 4, b = brightness * 255;
+    pixels[p] = b * (0.7 + warmth * 0.3); pixels[p + 1] = b * 0.85; pixels[p + 2] = b * (1 - warmth * 0.2); pixels[p + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(pixels, width, height);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.magFilter = texture.minFilter = THREE.NearestFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export function createSkyMaterial() {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false,
@@ -9,10 +26,11 @@ export function createSkyMaterial() {
       moonDirection: { value: new THREE.Vector3(0.65, -0.5, 0.4).normalize() },
       sunColor: { value: new THREE.Color("#fff0d3") }, sunVisibility: { value: 1 },
       night: { value: 0 }, twilight: { value: 0 }, time: { value: 0 }, rotation: { value: 0 },
+      stars: { value: starTexture() },
     },
-    vertexShader: `varying vec3 vDirection;
-      void main(){vDirection=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-    fragmentShader: `varying vec3 vDirection;
+    vertexShader: `varying vec3 vDirection;varying vec2 vUv;
+      void main(){vDirection=position;vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader: `varying vec3 vDirection;varying vec2 vUv;uniform sampler2D stars;
       uniform vec3 zenith,horizon,sunDirection,moonDirection,sunColor;
       uniform float sunVisibility,night,twilight,time,rotation;
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
@@ -30,14 +48,12 @@ export function createSkyMaterial() {
         float aureole=exp(-separation*separation*1600.)*.35+exp(-separation*separation*140.)*.075;
         sky+=sunColor*(disc*5.+aureole)*sunVisibility;
         if(night>.001){
-          float c=cos(rotation),s=sin(rotation);
-          vec3 sd=vec3(c*d.x+s*d.z,d.y,-s*d.x+c*d.z);
-          vec2 starUV=vec2(atan(sd.z,sd.x)/6.2831853+.5,asin(clamp(sd.y,-1.,1.))/3.1415927+.5)*vec2(700.,350.);
-          vec2 cell=floor(starUV),p=fract(starUV)-vec2(hash(cell+17.),hash(cell+43.));float seed=hash(cell);
-          float radius=max(.035,length(fwidth(starUV))*.22);
-          float star=exp(-dot(p,p)/(radius*radius))*step(.995,seed);
-          float twinkle=.82+.18*sin(time*1.1+seed*300.);
-          sky+=mix(vec3(.7,.82,1.),vec3(1.,.9,.72),hash(cell+91.))*star*night*twinkle*smoothstep(0.,.12,d.y)*1.8;
+          // Bake the sparse star field once instead of hashing/trigonometry at
+          // every sky pixel on every frame, particularly costly on phones.
+          vec2 starUV=vec2(vUv.x+rotation/6.2831853,vUv.y),cell=starUV*vec2(1024.,512.);
+          vec2 pixel=(fract(cell)-.5)/max(fwidth(cell),vec2(.001));
+          vec3 star=texture2D(stars,starUV).rgb*(1.-smoothstep(.35,1.1,length(pixel)));
+          sky+=star*night*(.9+.1*sin(time*1.1))*smoothstep(0.,.12,d.y)*1.8;
           vec3 right=normalize(cross(vec3(0.,1.,0.),moonDirection)),up=cross(moonDirection,right);
           vec2 uv=vec2(dot(d,right),dot(d,up))/.009;
           float r2=dot(uv,uv);float mask=(1.-smoothstep(.96,1.04,r2))*step(.99,dot(d,moonDirection));

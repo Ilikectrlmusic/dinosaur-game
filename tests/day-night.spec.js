@@ -14,18 +14,20 @@ test("every rider holds the night torch, gathers the reins and keeps the fire at
       const dino = buildDinosaur(rider, mount), scene = new T.Scene(), torch = new RiderTorch(scene);
       scene.add(dino.root); dino.torchAmount = 1;
       if (rider > 0) dino.torchPose = 1;
-      let pinError = 0, reinError = 0, maxStretch = 0, raised = Infinity, ropeBound = 0;
+      let pinError = 0, reinError = 0, maxStretch = 0, raised = Infinity, ropeBound = 0, crouchedFireTop = 0;
       for (let frame = 0; frame < 240; frame++) {
         const time = frame / 60;
         const duck = time > 2 ? Math.sin((time - 2) / 2 * Math.PI) ** 2 : 0;
         animateDinosaur(dino, time, 1, duck, 0, 1 / 60);
-        torch.update(1 / 60, dino.rider.limbs[1].hand, dino.torchPose, time, { speed: 18 });
+        torch.update(1 / 60, dino.rider.limbs[1].hand, dino.torchPose, time, { speed: 18, duck });
         for (const rein of dino.reins) for (const p of rein.points) ropeBound = Math.max(ropeBound, p.length());
         dino.rider.limbs[1].hand.getWorldPosition(point);
         pinError = Math.max(pinError, torch.root.position.distanceTo(point));
         if (time > 1.8) {
           dino.rider.head.getWorldPosition(head);
-          raised = Math.min(raised, torch.origin.y - head.y);
+          if (duck < 0.2) raised = Math.min(raised, torch.origin.y - head.y);
+          if (duck > 0.995) crouchedFireTop = Math.max(crouchedFireTop,
+            torch.flame.localToWorld(new T.Vector3(0, 0.6 * torch.flameMaterial.uniforms.stretch.value + 0.16, 0)).y);
           dino.root.worldToLocal(dino.rider.limbs[0].hand.getWorldPosition(left));
           reinError = Math.max(reinError, dino.reins[1].points[0].distanceTo(left));
           for (const rein of dino.reins) {
@@ -34,7 +36,7 @@ test("every rider holds the night torch, gathers the reins and keeps the fire at
           }
         }
       }
-      results.push({ mount, rider, pinError, reinError, maxStretch, raised, ropeBound, lit: torch.light.intensity, particles: torch.alive });
+      results.push({ mount, rider, pinError, reinError, maxStretch, raised, ropeBound, crouchedFireTop, lit: torch.light.intensity, particles: torch.alive });
     }
     return results;
   });
@@ -43,6 +45,7 @@ test("every rider holds the night torch, gathers the reins and keeps the fire at
     expect(result.reinError, JSON.stringify(result)).toBeLessThan(0.001);
     expect(result.maxStretch, JSON.stringify(result)).toBeLessThan(1.4);
     expect(result.raised, JSON.stringify(result)).toBeGreaterThan(0.25);
+    expect(result.crouchedFireTop, JSON.stringify(result)).toBeLessThan(3.2);
     expect(result.ropeBound, JSON.stringify(result)).toBeLessThan(5);
     expect(result.lit).toBeGreaterThan(0);
     expect(result.particles).toBeLessThanOrEqual(24);
@@ -78,8 +81,8 @@ test("day and night update the environment and UI, pause with the game, and keep
     }, { timeout: 10000, intervals: [20, 50, 100] }).toBeGreaterThan(time);
     await page.clock.runFor(300);
     return page.evaluate(() => ({ state: window.__saurian.state,
-      sun: window.__cycleTest.world.sun.intensity, fog: window.__cycleTest.world.scene.fog.color.toArray(),
-      shadow: window.__cycleTest.torch.groundLight.shadow.mapSize.x }));
+      sun: window.__cycleTest.world.dayNight.solarIntensity, fog: window.__cycleTest.world.scene.fog.color.toArray(),
+      shadow: window.__cycleTest.torch.groundLight.castShadow }));
   };
   const day = await sample(21.6);
   expect(day.state.daylight.stage).toBe("day"); expect(day.state.torch.strength).toBe(0);
@@ -88,7 +91,7 @@ test("day and night update the environment and UI, pause with the game, and keep
   expect(sunset.state.daylight.stage).toBe("sunset"); expect(sunset.sun).toBeLessThan(day.sun);
   const night = await sample(111.6);
   expect(night.state.daylight.stage).toBe("night"); expect(night.state.torch.light).toBeGreaterThan(0);
-  expect(night.sun).toBe(0); expect(night.fog).not.toEqual(day.fog); expect(night.shadow).toBe(512);
+  expect(night.sun).toBe(0); expect(night.fog).not.toEqual(day.fog); expect(night.shadow).toBe(false);
   await expect(page.locator("#weather-phase")).toHaveText("MOONLIT NIGHT");
   const detail = await page.evaluate(async () => {
     const { buildCactus } = await import("/src/creatures.js");

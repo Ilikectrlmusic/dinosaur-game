@@ -7,7 +7,7 @@ async function openGame(page) {
       "renderer.render(world.scene, camera);",
       "if (!window.__skipGraphics) renderer.render(world.scene, camera);",
     ).replace("// A small read-only diagnostic surface",
-      "window.__renderReview = { renderer, world }; // A small read-only diagnostic surface") });
+      "window.__renderReview = { renderer, world, torch, get dino(){return dino;} }; // A small read-only diagnostic surface") });
   });
   await page.addInitScript(() => {
     if (!localStorage.getItem("saurian-preferences"))
@@ -113,7 +113,7 @@ test.describe("adaptive rendering", () => {
     });
     expect(after.pixels).toBeLessThan(before.pixels * 0.8);
     expect(after.css).toBe(before.css);
-    expect(after.shadow).toBe(1024);
+    expect(after.shadow).toBe(512);
     expect(after.quality).toBe("high");
     await page.evaluate(() => { window.__distanceNode = document.querySelector("#distance").firstChild; });
     await page.locator("#start-button").click();
@@ -129,6 +129,39 @@ test.describe("adaptive rendering", () => {
     await expect.poll(async () => {
       await page.clock.runFor(50);
       return page.locator("#scene canvas").evaluate((canvas) => ({ pixels: canvas.width, css: canvas.getBoundingClientRect().width }));
-    }).toEqual({ pixels: Math.floor(1024 * 1.65), css: 1024 });
+    }).toEqual({ pixels: Math.floor(1024 * 1.5), css: 1024 });
   });
+});
+
+test("daylight shadows stay within their update budget and night fire never adds a shadow pass", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("saurian-preferences", JSON.stringify({ quality: "high", motion: false, sound: false })));
+  await openGame(page);
+  const result = await page.evaluate(() => {
+    const { world, torch, dino } = window.__renderReview, shadow = world.sun.shadow, updates = [];
+    world.setRenderScale(1);
+    for (const fps of [30, 60, 120]) {
+      world.shadowElapsed = 0; shadow.needsUpdate = false;
+      let count = 0;
+      for (let i = 0; i < fps * 2; i++) {
+        world.update(1 / fps, 21.6 + i / fps);
+        if (shadow.needsUpdate) count++;
+        shadow.needsUpdate = false;
+      }
+      updates.push(count);
+    }
+    let nightUpdates = 0;
+    for (let i = 0; i < 120; i++) {
+      world.update(1 / 60, 111.6 + i / 60);
+      if (shadow.needsUpdate) nightUpdates++;
+      shadow.needsUpdate = false;
+    }
+    torch.update(1 / 60, dino.rider.limbs[1].hand, 1, 111.6);
+    const nightLit = torch.light.visible && torch.groundLight.visible && torch.groundLight.intensity > 400;
+    torch.reset(); torch.update(1 / 60, dino.rider.limbs[1].hand, 0, 201.6);
+    return { updates, nightUpdates, nightLit, automatic: shadow.autoUpdate, size: shadow.mapSize.x,
+      torchShadow: torch.groundLight.castShadow, daytimeLights: torch.light.visible || torch.groundLight.visible };
+  });
+  for (const count of result.updates) expect(count).toBeGreaterThanOrEqual(47);
+  for (const count of result.updates) expect(count).toBeLessThanOrEqual(48);
+  expect(result).toMatchObject({ nightUpdates: 0, nightLit: true, automatic: false, size: 1024, torchShadow: false, daytimeLights: false });
 });

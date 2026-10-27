@@ -686,7 +686,7 @@ function frame(now) {
   camera.userData.viewportHeight = renderer.domElement.height;
   torch.update(dt, dino.rider.limbs[1].hand, dino.torchPose, state.time, {
     camera, firstPerson: state.view === "first" && state.mode === "running",
-    speed, motion: state.motion, groundHeight: 0,
+    speed, duck: state.duck, motion: state.motion, groundHeight: 0,
   });
   if (renderBudget.sample(dt)) {
     renderer.setPixelRatio(renderBudget.ratio);
@@ -696,7 +696,11 @@ function frame(now) {
   world.groundEffects.setViewport(renderer.domElement.height, camera.fov);
   renderer.render(world.scene, camera);
 }
+let daylightHUDKey = "";
 function updateDaylightHUD(daylight) {
+  const key = daylight.temperature + daylight.label + (daylight.night > 0.4);
+  if (key === daylightHUDKey) return;
+  daylightHUDKey = key;
   const temperature = daylight.temperature + "°";
   if ($("weather-temperature").textContent !== temperature) $("weather-temperature").textContent = temperature;
   if ($("weather-phase").textContent !== daylight.label) {
@@ -883,8 +887,7 @@ function bindUI() {
     document.addEventListener(type, () => audio.init(), { capture: true, passive: true });
 }
 function applyQuality() {
-  renderBudget.reset(Math.min(devicePixelRatio, state.quality === "high" ? (innerWidth < 700 ? 1.5 : 1.65) : 1),
-    state.quality === "high" ? 0.8 : 0.7);
+  renderBudget.reset(Math.min(devicePixelRatio, state.quality === "high" ? (innerWidth < 700 ? 1.25 : 1.5) : 1), 0.7);
   renderer.setPixelRatio(renderBudget.ratio);
   renderer.shadowMap.enabled = state.quality === "high";
   world.sun.castShadow = state.quality === "high";
@@ -942,8 +945,19 @@ function init() {
     });
     lastFrame = performance.now();
     requestAnimationFrame(frame);
-    Promise.race([Promise.all([world.ready, surfaceReady]), new Promise((resolve) => setTimeout(resolve, 4500))]).then(() => {
+    Promise.race([Promise.all([world.ready, surfaceReady]), new Promise((resolve) => setTimeout(resolve, 4500))]).then(async () => {
       world.finalizeSurfaces();
+      // Cache the night-light shader variant before play, then immediately
+      // restore current visibility so the running daytime frame stays cheap.
+      const visible = torch.root.visible;
+      const shadow = world.sun.castShadow;
+      torch.root.visible = torch.light.visible = torch.groundLight.visible = true;
+      const duskWarmup = renderer.compileAsync(world.scene, camera);
+      world.sun.castShadow = false;
+      const nightWarmup = renderer.compileAsync(world.scene, camera);
+      world.sun.castShadow = shadow;
+      torch.root.visible = torch.light.visible = torch.groundLight.visible = visible;
+      await Promise.all([duskWarmup, nightWarmup]);
       requestAnimationFrame(() => {
         $("loading").style.opacity = "0";
         setTimeout(() => $("loading")?.remove(), 750);

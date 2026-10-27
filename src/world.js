@@ -65,7 +65,10 @@ export class DesertWorld {
     this.sun = new THREE.DirectionalLight("#ffe0b5", 3.2);
     this.sun.position.set(-40, 35, 25);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.autoUpdate = false;
+    this.sun.shadow.needsUpdate = true;
+    this.shadowElapsed = 0;
     this.sun.shadow.camera.left = -25;
     this.sun.shadow.camera.right = 25;
     this.sun.shadow.camera.top = 25;
@@ -134,12 +137,13 @@ export class DesertWorld {
     this.setRenderScale(1);
   }
   setRenderScale(scale) {
-    const fullSize = this.quality === "high" && innerWidth >= 700 ? 2048 : 1024;
-    const shadowSize = scale < (fullSize === 2048 ? 0.85 : 0.7) ? fullSize / 2 : fullSize;
+    const shadowSize = scale < 0.85 ? 512 : 1024;
+    this.shadowInterval = scale < 0.85 ? 1 / 15 : 1 / 24;
     if (this.sun.shadow.mapSize.x !== shadowSize) {
       this.sun.shadow.mapSize.set(shadowSize, shadowSize);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
+      this.sun.shadow.needsUpdate = true;
     }
   }
   createSky(renderer) { createAtmosphere(this, renderer); }
@@ -263,6 +267,12 @@ export class DesertWorld {
   }
   update(dt, time, speed = 0, mountHeight = 0) {
     this.dayNight.update(time);
+    this.shadowElapsed += dt;
+    if (this.sun.castShadow && this.dayNight.solarIntensity > 0.001 && this.shadowElapsed >= this.shadowInterval) {
+      this.sun.shadow.needsUpdate = true;
+      this.shadowElapsed %= this.shadowInterval;
+    }
+    if (this.dayNight.solarIntensity <= 0.001) this.sun.shadow.needsUpdate = false;
     this.distance += speed * dt;
     // On these horizontal planes, V decreases toward +Z. Increasing the
     // texture offset keeps surface details moving with the plants toward +Z.

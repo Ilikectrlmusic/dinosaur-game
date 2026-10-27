@@ -886,8 +886,8 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
   rider.torso.rotation.x = -0.1;
   dino.torchPose = THREE.MathUtils.damp(dino.torchPose, dino.torchAmount, 9, dt);
   rider.limbs.forEach(({ arm, side }) => {
-    arm.rotation.x = duck * 1.78 + (side === 1 ? dino.torchPose * (1.65 - duck * 0.35) : 0);
-    arm.rotation.z = dino.torchPose * 0.35;
+    arm.rotation.x = THREE.MathUtils.lerp(duck * 1.78, 1.65 - duck * 1.35, side === 1 ? dino.torchPose : 0);
+    arm.rotation.z = dino.torchPose * (0.35 + (side === 1 ? duck * 0.35 : 0));
   });
   dino.root.updateMatrixWorld(true);
   dino.skinSurface.update();

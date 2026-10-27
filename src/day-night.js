@@ -42,10 +42,8 @@ export class DayNightLighting {
       sunDay: "#fff0d3", sunDusk: "#ff9146", fillDay: "#c6dce5", fillNight: "#597aa8",
       cloudDay: "#fff3da", cloudNight: "#34435e", cloudDusk: "#edaa8a",
       ridgeNight: "#18263b", dustDay: "#e8d4aa", dustNight: "#756c62", impactNight: "#9d805f", impactDay: "#c1a585",
-      stemDay: "#736c49", stemNight: "#1b2638",
+      stemDay: "#736c49", stemNight: "#1b2638", moon: "#a6c3f4",
     }).map(([key, color]) => [key, new THREE.Color(color)]));
-    this.moon = new THREE.DirectionalLight("#a6c3f4", 0);
-    world.scene.add(this.moon);
     this.ridges = (world.ridgeMaterials || []).map((material) => ({ material, day: material.color.clone() }));
     this.details = new Map();
     this.register(world.scene);
@@ -67,6 +65,11 @@ export class DayNightLighting {
     if (this.time === time) return this.state;
     this.time = time;
     const state = sampleDayNight(time, this.state), p = this.palette, w = this.world;
+    w.sky.material.uniforms.time.value = time;
+    // The astronomical clock is continuous; slow atmospheric color changes
+    // need only 30 updates per second, independently of the animation frame rate.
+    if (Math.abs(time - this.lightingTime) < 1 / 30) return state;
+    this.lightingTime = time;
     const { daylight, twilight, night } = state;
     const sky = w.sky.material.uniforms;
     sky.zenith.value.lerpColors(p.zenithNight, p.zenithDay, daylight).lerp(p.zenithDusk, twilight * 0.55);
@@ -83,11 +86,15 @@ export class DayNightLighting {
     w.hemi.color.lerpColors(p.skyNight, p.skyDay, daylight);
     w.hemi.groundColor.lerpColors(p.groundNight, p.groundDay, daylight);
     w.hemi.intensity = 0.7 + daylight * 0.5;
-    w.sun.position.copy(sky.sunDirection.value).multiplyScalar(70);
-    w.sun.color.copy(sky.sunColor.value);
-    w.sun.intensity = state.solar * (2.1 + smooth(0.1, 0.75, state.sunY) * 1.2);
-    this.moon.position.copy(sky.moonDirection.value).multiplyScalar(70);
-    this.moon.intensity = night * 0.6;
+    // Reuse the key light for moonlight. It fades out at the horizon before
+    // changing sides, without adding another directional-light shader loop.
+    this.solarIntensity = state.solar * (2.1 + smooth(0.1, 0.75, state.sunY) * 1.2);
+    this.moonIntensity = (1 - smooth(-0.22, -0.055, state.sunY)) * 0.6;
+    w.sun.position.copy(state.sunY < -0.055 ? sky.moonDirection.value : sky.sunDirection.value).multiplyScalar(70);
+    w.sun.color.copy(state.sunY < -0.055 ? p.moon : sky.sunColor.value);
+    w.sun.intensity = this.solarIntensity + this.moonIntensity;
+    w.sun.shadow.intensity = state.solar;
+    w.sun.castShadow = w.quality === "high" && this.solarIntensity > 0.001;
     w.fill.color.lerpColors(p.fillNight, p.fillDay, daylight);
     w.fill.intensity = 0.16 + daylight * 0.54;
     w.scene.environmentIntensity = 0.025 + daylight * 0.375;

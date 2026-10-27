@@ -35,6 +35,7 @@ import { DeathOverlay } from "./death-overlay.js";
 import { MobileInput } from "./mobile-input.js";
 import { surfaceReady } from "./surface-detail.js";
 import { FireBreath } from "./fire-breath.js";
+import { RiderTorch } from "./rider-torch.js";
 import { mountDefinition } from "./mounts.js";
 import { RenderBudget } from "./render-budget.js";
 import { DIFFICULTY_NAMES, personalBests, recordBest, animatedRecord } from "./personal-best.js";
@@ -85,6 +86,7 @@ audio.setVolume(state.volume);
 let renderer,
   world,
   fire,
+  torch,
   camera,
   dragLook,
   mobileInput,
@@ -227,6 +229,10 @@ function resetDino() {
   dino = buildDinosaur(state.rider, state.mount);
   world.scene.add(dino.root);
   dino.root.position.set(0, 0, 0);
+  dino.torchAmount = world.dayNight.state.torch;
+  dino.torchPose = dino.torchAmount;
+  animateDinosaur(dino, state.time, 0, 0, 0, 0);
+  torch?.reset();
   world.groundEffects.reset();
 }
 function toggleView() {
@@ -376,6 +382,7 @@ function spawnObstacle(spec, z = -95) {
   object.position.set(0, bird ? spec.flightHeight : 0, z);
   if (bird) object.rotation.y = Math.PI;
   world.scene.add(object);
+  world.dayNight.register(object);
   obstacles.push(object);
   return object;
 }
@@ -440,6 +447,7 @@ function crash(obstacle) {
   deathTimeout = setTimeout(() => finishCrash(generation), 2700);
   try {
     audio.hit();
+    torch.beginCrash();
     dino.root.updateMatrixWorld(true);
     physics = new CrashPhysics(
       world.scene,
@@ -633,6 +641,9 @@ function frame(now) {
     return;
   }
   state.time += dt;
+  const daylight = world.dayNight.update(state.time);
+  dino.torchAmount = daylight.torch;
+  updateDaylightHUD(daylight);
   const distanceBefore = state.distance;
   let groundEffectsElapsed = 0;
   if (state.mode === "running") {
@@ -672,6 +683,11 @@ function frame(now) {
   world.update(dt, state.time, (state.distance - distanceBefore) / dt, state.y);
   audio.update(dt, speed, state.mode === "running", state.y > 0.1);
   updateCamera(dt);
+  camera.userData.viewportHeight = renderer.domElement.height;
+  torch.update(dt, dino.rider.limbs[1].hand, dino.torchPose, state.time, {
+    camera, firstPerson: state.view === "first" && state.mode === "running",
+    speed, motion: state.motion, groundHeight: 0,
+  });
   if (renderBudget.sample(dt)) {
     renderer.setPixelRatio(renderBudget.ratio);
     world.setRenderScale(renderBudget.ratio / renderBudget.maxRatio);
@@ -679,6 +695,16 @@ function frame(now) {
   fire.setViewport(renderer.domElement.height, camera.fov, state.view === "first");
   world.groundEffects.setViewport(renderer.domElement.height, camera.fov);
   renderer.render(world.scene, camera);
+}
+function updateDaylightHUD(daylight) {
+  const temperature = daylight.temperature + "°";
+  if ($("weather-temperature").textContent !== temperature) $("weather-temperature").textContent = temperature;
+  if ($("weather-phase").textContent !== daylight.label) {
+    $("weather-phase").textContent = daylight.label;
+    $("weather").setAttribute("aria-label", daylight.chinese);
+  }
+  $("weather-sun").classList.toggle("hidden", daylight.night > 0.4);
+  $("weather-moon").classList.toggle("hidden", daylight.night <= 0.4);
 }
 function bindUI() {
   $("distance").addEventListener("animationend", () => $("distance").classList.remove("milestone-flash"));
@@ -893,6 +919,7 @@ function init() {
     camera.lookAt(-3, 1.9, 1.5);
     world = new DesertWorld(renderer);
     fire = new FireBreath(world.scene);
+    torch = new RiderTorch(world.scene);
     resetDino();
     applyQuality();
     updateSelection();
@@ -942,6 +969,11 @@ function init() {
             x: state.x,
             sound: state.sound,
             milestone: state.milestone,
+            daylight: { time: world.dayNight.time, phase: world.dayNight.state.phase, stage: world.dayNight.state.stage,
+              sun: [world.dayNight.state.sunX, world.dayNight.state.sunY, world.dayNight.state.sunZ],
+              night: world.dayNight.state.night, torch: world.dayNight.state.torch },
+            torch: { strength: torch.strength, particles: torch.alive, position: torch.root.position.toArray(),
+              origin: torch.origin.toArray(), light: torch.light.intensity, groundLight: torch.groundLight.intensity },
             fire: { active: fire.active, bursts: fire.bursts, particles: fire.alive, strength: fire.strength, origin: fire.origin.toArray() },
             groundEffects: { particles: world.groundEffects.alive, footprints: world.groundEffects.tracksAlive,
               emissions: { ...world.groundEffects.emissions }, lastImpact: world.groundEffects.lastImpact && { ...world.groundEffects.lastImpact } },

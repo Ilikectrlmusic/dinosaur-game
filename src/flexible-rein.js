@@ -36,7 +36,7 @@ export class FlexibleRein extends THREE.Mesh {
     this.length = 0;
   }
 
-  update(start, end, deltaTime = 1 / 60) {
+  update(start, end, deltaTime = 1 / 60, gathered = 0) {
     const dt = Math.min(1 / 30, Math.max(1 / 240, deltaTime));
     if (!this.initialized) {
       this.length = start.distanceTo(end) * 1.09;
@@ -72,7 +72,9 @@ export class FlexibleRein extends THREE.Mesh {
       // Drape along the outside of the neck instead of falling through it.
       for (let i = 1; i < SEGMENTS; i++) {
         const clearance = 0.32 + Math.sin(i / SEGMENTS * Math.PI) * 0.1;
-        this.points[i].x = this.side * Math.max(clearance, this.side * this.points[i].x);
+        const guide = 1 - gathered * (1 - THREE.MathUtils.smoothstep(i / SEGMENTS, 0.1, 0.35));
+        this.points[i].x = THREE.MathUtils.lerp(this.points[i].x,
+          this.side * Math.max(clearance, this.side * this.points[i].x), guide);
       }
     }
     // Exact attachment takes precedence over the interior solver's tolerance.

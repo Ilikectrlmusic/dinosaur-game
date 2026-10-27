@@ -170,14 +170,17 @@
       <span class="world-number">REGION 001</span
       ><span class="world-line"></span><strong>THE BADLANDS</strong
       ><span>遗忘之境 · 史前荒漠</span>
-      <div class="weather">
-        <svg viewBox="0 0 24 24">
+      <div class="weather" id="weather" aria-label="白昼">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <g id="weather-sun">
           <circle cx="12" cy="12" r="4" />
           <path
             d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"
           />
+          </g>
+          <path id="weather-moon" class="hidden" d="M20 15.1A8.5 8.5 0 0 1 8.9 4a8.5 8.5 0 1 0 11.1 11.1Z" />
         </svg>
-        32° <i> / </i> GOLDEN HOUR
+        <span id="weather-temperature">32°</span><i> / </i><span id="weather-phase">DAYLIGHT</span>
       </div>
     </aside>
     <div class="view-control" id="view-control">

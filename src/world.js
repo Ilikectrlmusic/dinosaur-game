@@ -3,6 +3,7 @@ import { buildCactus, buildPterosaur } from "./creatures.js";
 import { terrainHeight, createAtmosphere, enhanceGround, createBadlands,
   createVegetation, createRockField, updateLandscape } from "./landscape-detail.js";
 import { GroundEffects } from "./ground-effects.js";
+import { DayNightLighting } from "./day-night.js";
 
 export const rand = (min, max) => min + Math.random() * (max - min);
 const temp = new THREE.Object3D();
@@ -59,7 +60,7 @@ export class DesertWorld {
     this.decorations = [];
     this.distance = 0;
     this.surfacesFinalized = false;
-    const hemi = new THREE.HemisphereLight("#d8e4ed", "#897054", 1.2);
+    const hemi = this.hemi = new THREE.HemisphereLight("#d8e4ed", "#897054", 1.2);
     this.scene.add(hemi);
     this.sun = new THREE.DirectionalLight("#ffe0b5", 3.2);
     this.sun.position.set(-40, 35, 25);
@@ -76,7 +77,7 @@ export class DesertWorld {
     this.sun.shadow.radius = 3;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
-    const fill = new THREE.DirectionalLight("#c6dce5", 0.7);
+    const fill = this.fill = new THREE.DirectionalLight("#c6dce5", 0.7);
     fill.position.set(10, 12, 14);
     this.scene.add(fill);
     this.createSky(renderer);
@@ -118,6 +119,7 @@ export class DesertWorld {
       this.flock.push(bird);
     }
     this.renderer = renderer;
+    this.dayNight = new DayNightLighting(this, renderer);
     this.ready = Promise.all(this.surfaceTasks || []);
   }
   finalizeSurfaces() {
@@ -260,6 +262,7 @@ export class DesertWorld {
     this.groundEffects.emit(x, z, "crash", amount / 16);
   }
   update(dt, time, speed = 0, mountHeight = 0) {
+    this.dayNight.update(time);
     this.distance += speed * dt;
     // On these horizontal planes, V decreases toward +Z. Increasing the
     // texture offset keeps surface details moving with the plants toward +Z.

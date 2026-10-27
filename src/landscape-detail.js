@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { contactShadowTexture } from "./surface-detail.js";
 import { ScrollingScenery } from "./scrolling-scenery.js";
 import { ROCK_FORMS, BOULDER_FORMS, rockFormationGeometry, boulderGeometry } from "./rock-formations.js";
+import { createSkyMaterial } from "./sky-material.js";
 
 const groundColorURL = new URL("./assets/ground-color.webp", import.meta.url).href;
 const groundNormalURL = new URL("./assets/ground-normal.webp", import.meta.url).href;
@@ -74,23 +75,7 @@ export function enhanceGround(world, ground) {
 }
 
 export function createAtmosphere(world, renderer) {
-  const skyMaterial = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false,
-    uniforms: {
-      zenith: { value: new THREE.Color("#5c9fb9") },
-      horizon: { value: new THREE.Color("#ead3ae") },
-      sunDirection: { value: new THREE.Vector3(-0.65, 0.5, 0.4).normalize() },
-    },
-    vertexShader: "varying vec3 vDirection; void main(){vDirection=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
-    fragmentShader: `varying vec3 vDirection; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 sunDirection;
-      void main(){vec3 d=normalize(vDirection);float h=clamp(d.y*4.,0.,1.);
-      vec3 sky=mix(horizon,zenith,pow(h,.4));float sun=max(0.,dot(d,sunDirection));
-      sky+=vec3(.7,.34,.1)*pow(sun,24.)*.35;
-      sky=mix(sky,vec3(2.,1.65,1.05),smoothstep(.9991,.9996,sun));gl_FragColor=vec4(sky,1.);
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-      }`,
-  });
+  const skyMaterial = createSkyMaterial();
   world.sky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), skyMaterial);
   world.sky.scale.setScalar(700);
   world.scene.add(world.sky);
@@ -116,19 +101,22 @@ export function createAtmosphere(world, renderer) {
   world.cloudTexture = new THREE.CanvasTexture(canvas);
   world.cloudTexture.colorSpace = THREE.SRGBColorSpace;
   world.cloudTexture.wrapS = THREE.RepeatWrapping;
-  const clouds = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.MeshBasicMaterial({
+  world.cloudMaterial = new THREE.MeshBasicMaterial({
     map: world.cloudTexture, transparent: true, opacity: 0.65, side: THREE.BackSide, depthWrite: false, fog: false,
-  }));
+  });
+  const clouds = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), world.cloudMaterial);
   world.scene.add(clouds);
 }
 
 export function createBadlands(world) {
   const material = rockMaterial(world);
   const tile = new THREE.Group();
+  world.ridgeMaterials = [];
   // These ridges are world geometry, rather than a horizon cylinder attached
   // to the camera. Matching endpoints let the distant ridge tiles join up.
   for (let layer = 0; layer < 2; layer++) {
     const ridgeMaterial = new THREE.MeshBasicMaterial({ color: layer ? "#c2c5bd" : "#a4b0ad", side: THREE.DoubleSide });
+    world.ridgeMaterials.push(ridgeMaterial);
     for (const side of [-1, 1]) {
       const positions = [], indices = [];
       for (let i = 0; i <= 100; i++) {
@@ -247,7 +235,8 @@ export function createVegetation(world, buildCactus) {
   group.add(leaves);
   const stemGeometry = new THREE.BufferGeometry();
   stemGeometry.setAttribute("position", new THREE.Float32BufferAttribute(stems, 3));
-  group.add(new THREE.LineSegments(stemGeometry, new THREE.LineBasicMaterial({ color: "#736c49" })));
+  world.stemMaterial = new THREE.LineBasicMaterial({ color: "#736c49" });
+  group.add(new THREE.LineSegments(stemGeometry, world.stemMaterial));
   const treeParts = [];
   for (const [a, b, radius] of [
     [[0, 0, 0], [0.13, 1.6, 0], 0.11], [[0.13, 1.3, 0], [-0.65, 2.1, 0.1], 0.065],

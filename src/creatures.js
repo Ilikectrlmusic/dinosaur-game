@@ -758,6 +758,8 @@ export function buildDinosaur(riderIndex = 0, mountId = "allosaurus") {
     forelimbs,
     gait: new DinosaurGait(),
     headMotion: { neckY: 0, neckPitch: 0, headPitch: 0 },
+    torchAmount: 0,
+    torchPose: 0,
     contactPosition: new THREE.Vector3(),
     tail,
     saddle,
@@ -882,16 +884,22 @@ export function animateDinosaur(dino, time, run = 0, duck = 0, jump = 0, dt = 1 
   rider.head.rotation.x = duck * 0.8;
   rider.head.rotation.y = Math.sin(time * 0.55) * 0.06;
   rider.torso.rotation.x = -0.1;
-  rider.limbs.forEach(({ arm }) => {
-    arm.rotation.x = duck * 1.78;
+  dino.torchPose = THREE.MathUtils.damp(dino.torchPose, dino.torchAmount, 9, dt);
+  rider.limbs.forEach(({ arm, side }) => {
+    arm.rotation.x = duck * 1.78 + (side === 1 ? dino.torchPose * (1.65 - duck * 0.35) : 0);
+    arm.rotation.z = dino.torchPose * 0.35;
   });
   dino.root.updateMatrixWorld(true);
   dino.skinSurface.update();
   dino.suspension.update(dt, verticalVelocity, speed, !run);
   dino.reins.forEach((rein, i) => {
     dino.root.worldToLocal(rider.limbs[i].hand.getWorldPosition(dino.reinStart));
+    if (i === 1 && dino.torchPose > 0) {
+      dino.root.worldToLocal(rider.limbs[0].hand.getWorldPosition(dino.reinEnd));
+      dino.reinStart.lerp(dino.reinEnd, dino.torchPose);
+    }
     dino.root.worldToLocal(dino.reinAnchors[i].getWorldPosition(dino.reinEnd));
-    rein.update(dino.reinStart, dino.reinEnd, dt);
+    rein.update(dino.reinStart, dino.reinEnd, dt, dino.torchPose);
     rein.visible = true;
   });
 }

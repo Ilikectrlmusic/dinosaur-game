@@ -90,7 +90,7 @@ export class DayNightLighting {
     // changing sides, without adding another directional-light shader loop.
     this.solarIntensity = state.solar * (2.1 + smooth(0.1, 0.75, state.sunY) * 1.2);
     this.moonIntensity = (1 - smooth(-0.22, -0.055, state.sunY)) * 0.6;
-    w.sun.position.copy(state.sunY < -0.055 ? sky.moonDirection.value : sky.sunDirection.value).multiplyScalar(70);
+    w.sun.position.copy(state.sunY < -0.055 ? sky.moonDirection.value : sky.sunDirection.value).multiplyScalar(70).add(w.sun.target.position);
     w.sun.color.copy(state.sunY < -0.055 ? p.moon : sky.sunColor.value);
     w.sun.intensity = this.solarIntensity + this.moonIntensity;
     w.sun.shadow.intensity = state.solar;

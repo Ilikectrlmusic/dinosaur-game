@@ -64,15 +64,17 @@ export class DesertWorld {
     this.scene.add(hemi);
     this.sun = new THREE.DirectionalLight("#ffe0b5", 3.2);
     this.sun.position.set(-40, 35, 25);
+    // Keep the rider covered while giving the visible track more room ahead.
+    this.sun.target.position.set(0, 0, -8);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.autoUpdate = false;
     this.sun.shadow.needsUpdate = true;
     this.shadowElapsed = 0;
-    this.sun.shadow.camera.left = -25;
-    this.sun.shadow.camera.right = 25;
-    this.sun.shadow.camera.top = 25;
-    this.sun.shadow.camera.bottom = -25;
+    this.sun.shadow.camera.left = -35;
+    this.sun.shadow.camera.right = 35;
+    this.sun.shadow.camera.top = 35;
+    this.sun.shadow.camera.bottom = -35;
     this.sun.shadow.camera.near = 0.5;
     this.sun.shadow.camera.far = 150;
     this.sun.shadow.bias = -0.0002;

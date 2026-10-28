@@ -152,9 +152,9 @@ test("stationary shadows keep their budget, scrolling props cast their current p
     // Follow real shadow submissions rather than just the scheduler's flag:
     // cached maps must never describe an earlier cactus/rock position in a run.
     const plant = world.plants[0], rock = world.rocks.children[0], casters = [rock];
-    plant.position.set(3, world.groundHeightAt(3, -4), -4);
+    plant.position.set(3, world.groundHeightAt(3, -40), -40);
     plant.traverse((object) => { if (object.isMesh && object.castShadow) casters.push(object); });
-    const matrix = rock.matrix.clone().makeTranslation(-3, 0, -4);
+    const matrix = rock.matrix.clone().makeTranslation(-3, 0, -40);
     rock.setMatrixAt(0, matrix); rock.instanceMatrix.needsUpdate = true; rock.computeBoundingSphere();
     const submitted = new Map(), alignment = [];
     for (const caster of casters) caster.onBeforeShadow = () => submitted.set(caster, caster.matrixWorld.elements[14]);
@@ -164,6 +164,8 @@ test("stationary shadows keep their budget, scrolling props cast their current p
       for (const caster of casters) alignment.push(Math.abs((submitted.get(caster) ?? Infinity) - caster.matrixWorld.elements[14]));
     }
     const movingSize = shadow.mapSize.x;
+    const ahead = plant.position.clone().set(0, 1, 0);
+    plant.localToWorld(ahead).applyMatrix4(shadow.matrix);
     world.setRenderScale(1);
     const retainedMovingSize = shadow.mapSize.x;
     world.update(1 / 60, 22, 0);
@@ -176,12 +178,15 @@ test("stationary shadows keep their budget, scrolling props cast their current p
     torch.update(1 / 60, dino.rider.limbs[1].hand, 1, 111.6);
     const nightLit = torch.light.visible && torch.groundLight.visible && torch.groundLight.intensity > 400;
     torch.reset(); torch.update(1 / 60, dino.rider.limbs[1].hand, 0, 201.6);
-    return { updates, alignment, movingSize, retainedMovingSize, nightUpdates, nightLit, automatic: shadow.autoUpdate, size: shadow.mapSize.x,
+    return { updates, alignment, ahead: ahead.toArray(), movingSize, retainedMovingSize, nightUpdates, nightLit, automatic: shadow.autoUpdate, size: shadow.mapSize.x,
       torchShadow: torch.groundLight.castShadow, daytimeLights: torch.light.visible || torch.groundLight.visible };
   });
   for (const count of result.updates) expect(count).toBeGreaterThanOrEqual(47);
   for (const count of result.updates) expect(count).toBeLessThanOrEqual(48);
   for (const error of result.alignment) expect(error).toBeLessThan(1e-8);
+  for (const coordinate of result.ahead) {
+    expect(coordinate).toBeGreaterThan(0.02); expect(coordinate).toBeLessThan(0.98);
+  }
   expect(result.movingSize).toBe(512); expect(result.retainedMovingSize).toBe(512);
   expect(result).toMatchObject({ nightUpdates: 0, nightLit: true, automatic: false, size: 1024, torchShadow: false, daytimeLights: false });
 });

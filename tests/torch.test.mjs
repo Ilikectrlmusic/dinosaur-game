@@ -95,3 +95,20 @@ test("a falling rider carries the torch with the hand and the flame goes out if 
   hand.position.y = -1; torch.update(1 / 60, hand, 1, 0.2);
   assert.equal(torch.strength, 0); assert.equal(torch.light.intensity, 0);
 });
+
+test("crouching keeps the shaft vertical in both views while the flame still trails behind", () => {
+  const scene = new THREE.Scene(), hand = new THREE.Object3D(); scene.add(hand); hand.position.set(0.6, 2, -0.4);
+  hand.rotation.set(-1.2, 0.3, 0.7);
+  const camera = new THREE.PerspectiveCamera(53, 390 / 844, 0.08, 800);
+  camera.position.y = 2.5; camera.rotation.set(-0.6, 2.1, 0.2); camera.updateMatrixWorld(true);
+  const torch = new RiderTorch(scene), axis = new THREE.Vector3(), rotation = new THREE.Quaternion();
+  for (const firstPerson of [false, true]) {
+    for (let i = 0; i < 120; i++) {
+      torch.update(1 / 60, hand, 1, i / 60, { camera, firstPerson, speed: 30, duck: 1 });
+      axis.set(0, 1, 0).applyQuaternion(torch.root.getWorldQuaternion(rotation));
+      assert.ok(axis.distanceTo(new THREE.Vector3(0, 1, 0)) < 1e-12, "camera/hand rotation must not tilt the crouched shaft");
+    }
+    axis.set(0, 1, 0).applyQuaternion(torch.flame.getWorldQuaternion(rotation));
+    assert.ok(axis.z > 0.7, "holding the stick upright must preserve the flame's wind response");
+  }
+});

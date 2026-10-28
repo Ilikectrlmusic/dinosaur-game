@@ -102,7 +102,7 @@ export class RiderTorch {
     this.origin = new THREE.Vector3(); this.handPosition = new THREE.Vector3(); this.direction = new THREE.Vector3();
     this.lastHandPosition = new THREE.Vector3();
     this.airflow = new THREE.Vector3(); this.localFlow = new THREE.Vector3(); this.up = new THREE.Vector3(0, 1, 0);
-    this.inverseRotation = new THREE.Quaternion();
+    this.inverseRotation = new THREE.Quaternion(); this.uprightRotation = new THREE.Quaternion();
     this.handRotation = new THREE.Quaternion(); this.previousHandRotation = new THREE.Quaternion(); this.crashRotation = new THREE.Quaternion();
     this.euler = new THREE.Euler(); this.seed = 0x7f4a921;
     this.reset();
@@ -158,6 +158,7 @@ export class RiderTorch {
     this.flameMaterial.uniforms.stretch.value = THREE.MathUtils.damp(this.flameMaterial.uniforms.stretch.value, stretch, 10, step);
     this.root.position.copy(this.handPosition);
     const viewModel = firstPerson && !this.crashed;
+    const upright = THREE.MathUtils.smoothstep(duck, 0, 0.95);
     this.root.scale.setScalar(viewModel ? 0.65 : 1);
     if (this.crashed) this.root.quaternion.copy(this.handRotation).multiply(this.crashRotation);
     else if (firstPerson && camera) {
@@ -165,7 +166,13 @@ export class RiderTorch {
       const halfWidth = halfHeight * camera.aspect;
       this.root.position.set(Math.min(0.5, halfWidth * 0.37), -halfHeight + 0.058 - duck * 0.1, -depth).applyQuaternion(camera.quaternion).add(camera.position);
       this.root.quaternion.copy(camera.quaternion).multiply(this.crashRotation.setFromEuler(this.euler.set(-0.04, 0, -0.1)));
-    } else this.root.quaternion.setFromEuler(this.euler.set(-0.07, 0, -0.12 - duck * 0.25 + Math.sin(time * 1.7) * 0.015));
+      // Preserve the view's yaw while keeping a crouched torch upright even
+      // when the player looks up/down. Wind tilts the flame independently.
+      camera.getWorldDirection(this.direction);
+      this.uprightRotation.setFromAxisAngle(this.up, Math.atan2(-this.direction.x, -this.direction.z));
+      this.root.quaternion.slerp(this.uprightRotation, upright);
+    } else this.root.quaternion.setFromEuler(this.euler.set(-0.07 * (1 - upright), 0,
+      (-0.12 + Math.sin(time * 1.7) * 0.015) * (1 - upright)));
     this.previousHandRotation.copy(this.handRotation);
     this.localFlow.copy(this.airflow).applyQuaternion(this.inverseRotation.copy(this.root.quaternion).invert()).normalize();
     this.flame.quaternion.setFromUnitVectors(this.up, this.localFlow);
